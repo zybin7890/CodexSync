@@ -1,0 +1,70 @@
+name: Build Debian release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debian13:
+    runs-on: ubuntu-24.04
+    container: debian:13-slim
+    timeout-minutes: 20
+    steps:
+      - name: Install build and GUI test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git build-essential cmake ninja-build pkg-config dpkg-dev \
+            libsodium-dev libcurl4-openssl-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev \
+            qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtqml-workerscript \
+            xvfb xauth libgl1-mesa-dri fonts-noto-cjk
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build and test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build -j 2
+          ctest --test-dir build --output-on-failure
+      - name: Package and install the DEB
+        run: |
+          cpack --config build/CPackConfig.cmake -G DEB -B dist
+          apt-get install -y ./dist/*.deb
+          /usr/bin/codex-sync --help
+          dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' codex-sync
+      - name: Check the installed GUI
+        env:
+          QT_QUICK_BACKEND: software
+          HOME: /tmp/codexsync-test-user
+          CODEX_HOME: /tmp/codexsync-test-user/.codex
+          XDG_RUNTIME_DIR: /tmp/codexsync-runtime
+        run: |
+          mkdir -p "$HOME" "$CODEX_HOME" "$XDG_RUNTIME_DIR" dist/gui-smoke
+          chmod 700 "$XDG_RUNTIME_DIR"
+          xvfb-run -a sh -eu -c '
+            /usr/bin/CodexSync --ui-smoke "$GITHUB_WORKSPACE/dist/gui-smoke" > "$GITHUB_WORKSPACE/dist/gui-smoke/gui.log" 2>&1 &
+            pid=$!
+            trap "kill $pid 2>/dev/null || true" EXIT
+            for attempt in $(seq 1 30); do
+              test -f "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json" && break
+              kill -0 "$pid" || { cat "$GITHUB_WORKSPACE/dist/gui-smoke/gui.log"; exit 1; }
+              sleep 1
+            done
+            test -f "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
+            test -s "$GITHUB_WORKSPACE/dist/gui-smoke/overview.png"
+            test -s "$GITHUB_WORKSPACE/dist/gui-smoke/api.png"
+            cat "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
+          '
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: codexsync-debian13-amd64
+          path: |
+            dist/*.deb
+            dist/gui-smoke/
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: error
+          retention-days: 7
