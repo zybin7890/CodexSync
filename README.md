@@ -4,7 +4,15 @@
 
 Codex 本地数据的加密备份与同步工具，使用 C23 / C++23、Qt 6 和 WebDAV。提供 Windows 11 风格 GUI、终端 CLI、HTTP API 与 C API。非 OpenAI 官方项目。
 
-**开发预览，尚非生产版本。** Windows 已编译运行，并通过本地仓库的历史记录备份/恢复测试；Debian GUI、DEB 包、真实 WebDAV 服务端互操作及跨设备迁移尚未验收。请先使用测试数据，不要直接覆盖唯一的数据副本。
+**开发预览，尚非生产版本。** Windows 便携包已验证 GUI、终端与认证 API；Debian 13 amd64 已通过编译、核心测试、DEB 安装、终端启动及 GUI 渲染检查。真实 WebDAV 服务端互操作及跨设备迁移尚未验收。请先使用测试数据，不要直接覆盖唯一的数据副本。
+
+## 下载与运行
+
+[v0.1.0 预览版](https://github.com/zybin7890/CodexSync/releases/tag/v0.1.0) 提供 Windows x64 ZIP、Debian 13 amd64 DEB 与 `SHA256SUMS`。
+
+- Windows 11：解压全部文件，运行 `CodexSync.exe`；终端使用 `codex-sync.exe`。已包含 Qt 与应用本地 VC 运行库，无需安装 Qt。当前未签名，可能出现 SmartScreen 提示。
+- Debian 13：运行 `sudo apt install ./CodexSync-v0.1.0-debian13-amd64.deb`，随后启动 `CodexSync` 或 `codex-sync --help`。依赖由 apt 安装；该包不面向 Debian 12。Windows 使用 FluentWinUI3 控件，Debian 使用 Fusion 控件，保留相同的设置页布局。
+- HTTP API 由终端程序的 `serve` 命令提供；C API 使用附带的动态库与头文件。
 
 ## 数据范围
 
@@ -54,7 +62,7 @@ ctest --test-dir build --output-on-failure
 ./build/codex-sync --help
 ```
 
-GUI 需另外安装 Qt 6.8+ SDK/开发模块，改为 `-DCXS_GUI=ON`，必要时通过 `CMAKE_PREFIX_PATH` 指定 SDK。较旧发行版的 Qt 版本可能不满足要求。Linux 构建与打包目前未验证。
+GUI 需另外安装 Qt 6.8+ SDK/开发模块，改为 `-DCXS_GUI=ON`，必要时通过 `CMAKE_PREFIX_PATH` 指定 SDK。较旧发行版的 Qt 版本可能不满足要求。Debian 13 的构建、测试与 DEB 安装检查见 [GitHub Actions](https://github.com/zybin7890/CodexSync/actions/workflows/build-debian-release.yml)；本地生成 DEB 时还需 `dpkg-dev` 与 `file`，然后运行 `cpack --config build/CPackConfig.cmake -G DEB`。
 
 ## 终端模式
 
@@ -80,7 +88,7 @@ codex-sync sync --config /absolute/path/sync.json --offline --dry-run
 codex-sync serve --config /absolute/path/sync.json --port 17841
 ```
 
-设置至少 32 个字符的 `CXS_API_TOKEN`，使用 `Authorization: Bearer <token>` 请求 `GET /v1/health` 或 `POST /v1/run`。请求示例：`{"op":"conversations"}`。公开 C 接口见 [`include/codex_sync.h`](include/codex_sync.h)，通过 `cxs_run()` 调用，返回值使用 `cxs_free()` 释放。
+设置至少 32 个字符的 `CXS_API_TOKEN`，使用 `Authorization: Bearer <token>` 请求 `GET /v1/health` 或 `POST /v1/run`。请求示例：`{"op":"scan"}`，结果包含活动与归档历史覆盖信息。公开 C 接口见 [`include/codex_sync.h`](include/codex_sync.h)，通过 `cxs_run()` 调用，返回值使用 `cxs_free()` 释放。
 
 ## 许可证
 
