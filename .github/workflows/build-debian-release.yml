@@ -38,6 +38,7 @@ jobs:
       - name: Check the installed GUI
         env:
           QT_QUICK_BACKEND: software
+          LC_ALL: C.UTF-8
           HOME: /tmp/codexsync-test-user
           CODEX_HOME: /tmp/codexsync-test-user/.codex
           XDG_RUNTIME_DIR: /tmp/codexsync-runtime
@@ -56,6 +57,9 @@ jobs:
             test -f "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
             test -s "$GITHUB_WORKSPACE/dist/gui-smoke/overview.png"
             test -s "$GITHUB_WORKSPACE/dist/gui-smoke/api.png"
+            if grep -E "Error decoding|failed to load|is not installed|is not a type" "$GITHUB_WORKSPACE/dist/gui-smoke/gui.log"; then
+              exit 1
+            fi
             cat "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
           '
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
