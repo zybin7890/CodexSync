@@ -177,7 +177,7 @@ Json discover(){auto home=env("CODEX_HOME");
 #ifdef _WIN32
     add("desktop",path(env("APPDATA"))/"Codex");add("desktop_local",path(env("LOCALAPPDATA"))/"Codex");
 #else
-    auto config=env("XDG_CONFIG_HOME");add("desktop",(config.empty()?path(user)/".config":path(config))/"Codex");
+    auto config_home=env("XDG_CONFIG_HOME");add("desktop",(config_home.empty()?path(user)/".config":path(config_home))/"Codex");
 #endif
     // Workspace data can be arbitrarily large; explicitly add it rather than guess external locations.
     Json config={{"format",1},{"device",random_id()},{"state",utf8(state)},{"roots",roots},{"remote",{{"url","https://your-server.example/dav"}}},{"exclude",Json::array()},{"note","Active and archived sessions, including .jsonl.zst and SQLite history, are included. Directory aliases are resolved; external linked history folders get named roots. Add custom workspaces, external skills and credential export directories explicitly. OS-bound credentials are opaque; login portability is not guaranteed."}};
