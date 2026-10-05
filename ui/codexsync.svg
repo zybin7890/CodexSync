@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32">
+  <title>CodexSync</title>
+  <rect x="2" y="2" width="28" height="28" rx="7" fill="#0F6CBD"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.5 15.5V13a4 4 0 0 1 4-4H22M19 6l3 3-3 3"/>
+    <path d="M22.5 16.5V19a4 4 0 0 1-4 4H10M13 20l-3 3 3 3"/>
+  </g>
+</svg>

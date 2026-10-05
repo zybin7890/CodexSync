@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CodexSync
+Comment=Encrypted local Codex data backup and synchronization
+Exec=CodexSync
+Icon=codexsync
+Terminal=false
+Categories=Utility;
