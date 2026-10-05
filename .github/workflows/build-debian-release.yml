@@ -16,7 +16,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates git build-essential cmake ninja-build pkg-config dpkg-dev \
+            ca-certificates git build-essential cmake ninja-build pkg-config dpkg-dev file \
             libsodium-dev libcurl4-openssl-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev \
             qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtqml-workerscript \
