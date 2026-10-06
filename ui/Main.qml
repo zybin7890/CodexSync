@@ -22,7 +22,9 @@ ApplicationWindow {
     readonly property color secondary: dark ? "#c4c4c4" : "#5a5a5a"
     readonly property color line: dark ? "#353535" : "#e4e4e4"
     readonly property color accent: dark ? "#60cdff" : "#0067c0"
-    readonly property bool remoteConfigured: !!ui.configuration.remote.directory || (!!ui.configuration.remote.url && ui.configuration.remote.url.indexOf("your-server.example") < 0)
+    readonly property string provider: ui.configuration.remote.provider || (ui.configuration.remote.directory ? "local" : "webdav")
+    readonly property string providerName: provider === "google_drive" ? "Google Drive" : provider === "local" ? "本地仓库" : "WebDAV"
+    readonly property bool remoteConfigured: provider === "google_drive" ? ui.googleAuthorized : provider === "local" ? !!ui.configuration.remote.directory : (!!ui.configuration.remote.url && ui.configuration.remote.url.indexOf("your-server.example") < 0)
     readonly property var navigation: [
         { title: "同步", icon: "home", page: 0 },
         { title: "数据目录", icon: "folder", page: 1 },
@@ -34,7 +36,7 @@ ApplicationWindow {
     readonly property var descriptions: [
         "在设备之间，安全保存你的 Codex 工作空间。",
         "选择要保存的本地数据，并为其他设备映射相同的目录 ID。",
-        "设置 WebDAV 存储空间和设备共用的加密主密钥。",
+        "设置 WebDAV、Google Drive 或本地仓库，以及设备共用的加密主密钥。",
         "浏览历史版本，将数据恢复到独立的新目录。",
         "在终端中使用 CLI；HTTP API 与 C API 仍可调用同一同步核心。",
         "外观、配置文件与本地同步状态。"
@@ -181,7 +183,7 @@ ApplicationWindow {
                 Layout.topMargin: 8
                 spacing: 8
                 Rectangle { width: 6; height: 6; radius: 3; color: ui.busy ? window.accent : window.secondary }
-                Label { text: ui.busy ? "正在处理，请稍候" : "界面预览 · 未执行自动同步"; color: window.secondary; font.pixelSize: 11; Layout.fillWidth: true }
+                Label { text: ui.busy ? "正在处理，请稍候" : "开发预览 · 不会自动同步"; color: window.secondary; font.pixelSize: 11; Layout.fillWidth: true }
                 BusyIndicator { visible: ui.busy; running: ui.busy; implicitWidth: 24; implicitHeight: 24 }
                 Label { text: "C++  /  Qt Quick"; color: window.secondary; font.pixelSize: 11 }
             }
@@ -212,21 +214,21 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 7
                         Label { text: window.remoteConfigured ? "你的同步空间" : "设置你的同步空间"; font.pixelSize: 19; font.weight: Font.DemiBold; color: window.ink; Layout.fillWidth: true; wrapMode: Text.WordWrap }
-                        Caption { text: "连接 WebDAV，然后选择加密密钥。\n你的对话与设置，始终由你掌控。"; font.pixelSize: 13 }
-                        Button { text: window.remoteConfigured ? "管理连接" : "配置 WebDAV"; highlighted: true; onClicked: window.currentPage = 2; Layout.topMargin: 5 }
+                        Caption { text: "连接 WebDAV 或 Google Drive，并选择加密密钥。\n你的对话与设置，始终由你掌控。"; font.pixelSize: 13 }
+                        Button { text: window.remoteConfigured ? "管理连接" : "配置存储空间"; highlighted: true; onClicked: window.currentPage = 2; Layout.topMargin: 5 }
                     }
                     ColumnLayout {
                         visible: !window.compact
                         spacing: 6
                         Label { text: "当前状态"; color: window.secondary; font.pixelSize: 12 }
-                        Label { text: window.remoteConfigured ? "地址已配置" : "尚未连接"; color: window.ink; font.pixelSize: 14 }
+                        Label { text: window.remoteConfigured ? "配置已就绪" : "尚未配置"; color: window.ink; font.pixelSize: 14 }
                         Label { text: ui.keyFile.length > 0 ? "已选择密钥" : "主密钥未选择"; color: window.secondary; font.pixelSize: 12 }
                     }
                 }
             }
             Section { text: "同步设置" }
             Setting { title: "同步内容"; description: "对话与历史、配置与凭据、skills 与插件"; iconName: "folder"; trailing: ui.configuration.roots.length + " 个目录"; clickable: true; onClicked: window.currentPage = 1 }
-            Setting { title: "WebDAV 存储空间"; description: window.remoteConfigured ? "地址已配置，连接状态尚未验证" : "连接你自己的服务器或网盘"; iconName: "cloud"; trailing: window.remoteConfigured ? "已配置" : "未配置"; clickable: true; onClicked: window.currentPage = 2 }
+            Setting { title: "同步存储空间"; description: window.remoteConfigured ? window.providerName + " 已配置，连接状态尚未验证" : "选择 WebDAV、Google Drive 或本地仓库"; iconName: "cloud"; trailing: window.providerName; clickable: true; onClicked: window.currentPage = 2 }
             Setting { title: "端到端加密"; description: "文件内容与快照目录均加密后上传"; iconName: "shield_lock"; trailing: ui.keyFile.length > 0 ? "密钥已选择" : "待设置"; clickable: true; onClicked: window.currentPage = 2 }
             Setting { title: "快照与恢复"; description: "保留历史版本，恢复默认导出到新目录"; iconName: "history"; clickable: true; onClicked: window.currentPage = 3 }
             Section { text: "最近活动" }
@@ -288,6 +290,31 @@ ApplicationWindow {
         ColumnLayout {
             spacing: 4
             Setting {
+                title: "存储服务"; description: "同一同步空间的设备使用相同服务与仓库 ID"; iconName: "cloud"; expandAvailable: true; expanded: true
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: ["WebDAV", "Google Drive", "本地仓库"]
+                    currentIndex: window.provider === "google_drive" ? 1 : window.provider === "local" ? 2 : 0
+                    onActivated: ui.setSetting("provider", ["webdav", "google_drive", "local"][currentIndex])
+                    Accessible.name: "同步存储服务"
+                }
+            }
+            Setting {
+                visible: window.provider === "google_drive"
+                title: "Google Drive"; description: "应用专用空间 · 不访问网盘其他文件"; iconName: "cloud"; expandAvailable: true; expanded: true
+                trailing: ui.googleAuthorized ? "授权已保存" : "未授权"
+                FieldLabel { text: "桌面应用 OAuth Client ID" }
+                TextField { Layout.fillWidth: true; text: ui.configuration.remote.client_id || ""; placeholderText: "…apps.googleusercontent.com 或 CXS_GOOGLE_CLIENT_ID"; onEditingFinished: ui.setSetting("client_id", text); Accessible.name: "Google OAuth Client ID" }
+                FieldLabel { text: "Client Secret（若该 OAuth 客户端需要）" }
+                TextField { Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: "不写入配置文件"; onEditingFinished: ui.setSetting("google_client_secret", text); Accessible.name: "Google OAuth Client Secret" }
+                FieldLabel { text: "仓库 ID" }
+                TextField { Layout.fillWidth: true; text: ui.configuration.remote.repository || "default"; placeholderText: "default"; onEditingFinished: ui.setSetting("repository", text); Accessible.name: "Google Drive 仓库 ID" }
+                RowLayout { spacing: 10; Button { text: ui.googleAuthorized ? "重新授权" : "在浏览器中授权"; highlighted: true; enabled: !ui.busy && ui.keyFile.length > 0; onClicked: ui.authorizeGoogle() } Caption { text: ui.busy ? ui.status : "先选择主密钥；浏览器授权限时 120 秒" } }
+                Caption { text: "只申请 drive.appdata 权限。令牌用主密钥加密后保存在本地状态目录，不上传。同一账号的各设备使用相同 OAuth 应用与仓库 ID，分别授权。" }
+                Button { text: "查看 OAuth 配置说明"; flat: true; onClicked: Qt.openUrlExternally("https://developers.google.com/identity/protocols/oauth2/native-app") }
+            }
+            Setting {
+                visible: window.provider === "webdav"
                 title: "WebDAV"; description: "支持标准 WebDAV 与 HTTPS 证书校验"; iconName: "cloud"; expandAvailable: true; expanded: true
                 FieldLabel { text: "服务器地址" }
                 TextField { Layout.fillWidth: true; text: ui.configuration.remote.url || ""; placeholderText: "https://server/remote.php/dav/files/user"; onEditingFinished: ui.setSetting("url", text) }
@@ -299,19 +326,24 @@ ApplicationWindow {
                 Caption { text: "用户名和密码不写入配置文件。建议使用网盘的独立应用密码。" }
             }
             Setting {
+                visible: window.provider === "local"
+                title: "本地仓库"; description: "不访问网络，可用于离线备份与测试"; iconName: "folder"; expandAvailable: true; expanded: true
+                FieldLabel { text: "仓库绝对路径" }
+                TextField { Layout.fillWidth: true; text: ui.configuration.remote.directory || ""; placeholderText: "选择独立的备份目录"; onEditingFinished: ui.setSetting("directory", text) }
+            }
+            Setting {
                 title: "加密主密钥"; description: "同一同步空间的所有设备共用一把主密钥"; iconName: "key"; expandAvailable: true; expanded: true
                 TextField { Layout.fillWidth: true; readOnly: true; text: ui.keyFile; placeholderText: "尚未选择主密钥" }
                 RowLayout { spacing: 8; Button { text: "选择密钥"; onClicked: ui.chooseKey() } Button { text: "生成新密钥"; onClicked: ui.createKey() } }
                 Caption { text: "密钥丢失无法恢复数据。请另存安全副本，不要放进同步目录。" }
             }
             Setting {
-                title: "高级设置"; description: "设备标识、本地状态与离线仓库"; iconName: "settings"; expandAvailable: true
+                title: "高级设置"; description: "设备标识与本地状态"; iconName: "settings"; expandAvailable: true
                 FieldLabel { text: "本地状态目录" } TextField { Layout.fillWidth: true; text: ui.configuration.state; onEditingFinished: ui.setSetting("state", text) }
                 FieldLabel { text: "设备 ID" } TextField { Layout.fillWidth: true; readOnly: true; text: ui.configuration.device }
-                FieldLabel { text: "本地仓库（可选）" } TextField { Layout.fillWidth: true; text: ui.configuration.remote.directory || ""; placeholderText: "留空使用 WebDAV"; onEditingFinished: ui.setSetting("directory", text) }
             }
             Button { text: "保存配置"; highlighted: true; Layout.topMargin: 18; Layout.bottomMargin: 18; onClicked: ui.saveConfig() }
-            Caption { text: "系统钥匙串与机器绑定的登录凭据可作为不透明数据保留，跨机器恢复后可能需要重新登录。" }
+            Caption { text: "Google Drive 使用追加式不可变快照保留并发分支；不覆盖远端历史，不传播删除。系统绑定凭据跨机器恢复后可能需要重新登录。" }
         }
     }
     Component {
@@ -362,8 +394,8 @@ ApplicationWindow {
             Section { text: "配置" }
             Setting { title: "同步配置文件"; description: ui.configFile.length > 0 ? ui.configFile : "尚未保存配置"; iconName: "folder"; expandAvailable: true; expanded: true; RowLayout { Button { text: "打开配置"; onClicked: ui.openConfig() } Button { text: "保存配置"; onClicked: ui.saveConfig() } } }
             Section { text: "关于" }
-            Setting { title: "CodexSync"; description: "C++23 · Qt Quick · FluentWinUI3"; iconName: "arrow_sync"; trailing: "UI 预览" }
-            Caption { text: "本轮仅验证界面布局与交互。同步核心、WebDAV 和 Debian 构建尚未完成交付验收。"; Layout.topMargin: 16 }
+            Setting { title: "CodexSync"; description: "C++23 · Qt Quick · " + (Qt.platform.os === "windows" ? "FluentWinUI3" : "Fusion"); iconName: "arrow_sync"; trailing: "v0.2.0 预览" }
+            Caption { text: "支持本地仓库、WebDAV 与 Google Drive。Google Drive 的真实账号互操作尚未验收；请先用测试数据，保留独立副本。"; Layout.topMargin: 16 }
         }
     }
     Dialog {

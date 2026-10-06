@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$RuntimeDirectory,
     [Parameter(Mandatory=$true)][string]$LicenseDirectory,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [string]$Version = '0.1.0'
+    [string]$Version = '0.2.0'
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent

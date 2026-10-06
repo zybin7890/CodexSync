@@ -62,6 +62,24 @@ jobs:
             fi
             cat "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
           '
+          cat > "$GITHUB_WORKSPACE/build/google-ui-test.json" <<EOF
+          {"format":1,"device":"0123456789abcdef0123456789abcdef","state":"$HOME/state","roots":[{"id":"codex_home","path":"$CODEX_HOME"}],"remote":{"provider":"google_drive","client_id":"preview.apps.googleusercontent.com","repository":"default"},"exclude":[]}
+          EOF
+          mkdir -p dist/google-gui-smoke
+          xvfb-run -a sh -eu -c '
+            /usr/bin/CodexSync --config "$GITHUB_WORKSPACE/build/google-ui-test.json" --ui-smoke "$GITHUB_WORKSPACE/dist/google-gui-smoke" > "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui.log" 2>&1 &
+            pid=$!
+            trap "kill $pid 2>/dev/null || true" EXIT
+            for attempt in $(seq 1 30); do
+              test -f "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui-ready.json" && break
+              kill -0 "$pid" || { cat "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui.log"; exit 1; }
+              sleep 1
+            done
+            test -f "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui-ready.json"
+            test -s "$GITHUB_WORKSPACE/dist/google-gui-smoke/connection.png"
+            if grep -E "Error decoding|failed to load|is not installed|is not a type" "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui.log"; then exit 1; fi
+            cat "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui-ready.json"
+          '
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -69,6 +87,7 @@ jobs:
           path: |
             dist/*.deb
             dist/gui-smoke/
+            dist/google-gui-smoke/
             build/Testing/Temporary/LastTest.log
           if-no-files-found: error
           retention-days: 7

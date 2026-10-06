@@ -5,6 +5,7 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <memory>
 namespace cxs {
 namespace fs = std::filesystem;
 using Json = nlohmann::json;
@@ -26,7 +27,13 @@ bool excluded_file(const Json& config, const std::string& relative);
 Json conversation_inventory(const Json& config);
 Json execute(Json request);
 void generate_key(const fs::path&);
-struct Response { int status{}; Bytes body; std::string etag; };
+struct Response { int status{}; Bytes body; std::string etag; std::string location; };
+using Headers = std::vector<std::string>;
+Response http_request(const std::string& url, const std::string& method, const Bytes& data={}, const Headers& headers={});
+std::string url_encode(const std::string&);
+Key credential_key(const Json& secrets);
+Json google_authorize(const Json& config, const Json& secrets, const std::function<void(const std::string&)>& open_browser);
+class GoogleDrive;
 class Store {
 public:
     explicit Store(const Json&, const Json&);
@@ -36,10 +43,12 @@ public:
     std::vector<std::string> list(const std::string& directory);
     Bytes get(const std::string& relative);
     bool put_immutable(const std::string&, const Bytes&);
+    bool append_only() const { return static_cast<bool>(google_); }
 private:
     std::string url_, user_, password_;
     fs::path directory_;
     bool insecure_local_{};
+    std::shared_ptr<GoogleDrive> google_;
 };
 void serve(const fs::path&, int port);
 }
