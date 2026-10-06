@@ -32,7 +32,10 @@ jobs:
       - name: Package and install the DEB
         run: |
           cpack --config build/CPackConfig.cmake -G DEB -B dist
-          apt-get install -y ./dist/*.deb
+          # debian:13-slim excludes /usr/share/doc by default; retain this package's notice.
+          grep -E '^path-(exclude|include)' /etc/dpkg/dpkg.cfg.d/docker
+          dpkg-deb --fsys-tarfile dist/*.deb | tar -tf - | grep '/DISCLAIMER.md$'
+          apt-get -o 'Dpkg::Options::=--path-include=/usr/share/doc/codex-sync/*' install -y ./dist/*.deb
           /usr/bin/codex-sync --help
           dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' codex-sync
           python3 tests/client_import_cli.py /usr/bin/codex-sync /tmp/codexsync-client-import
