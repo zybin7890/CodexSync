@@ -36,8 +36,14 @@ jobs:
           /usr/bin/codex-sync --help
           dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' codex-sync
           python3 tests/client_import_cli.py /usr/bin/codex-sync /tmp/codexsync-client-import
-          /usr/bin/codex-sync disclaimer | grep -q AGPL-3.0-only
-          test -s /usr/share/doc/codex-sync/DISCLAIMER.md
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          expected = Path('/usr/share/doc/codex-sync/DISCLAIMER.md').read_text()
+          actual = subprocess.check_output(['/usr/bin/codex-sync', 'disclaimer']).decode()
+          assert actual == expected and 'AGPL-3.0-only' in actual
+          print('DEBIAN_INSTALLED_NOTICE_PASS: CLI text matches shipped notice')
+          PY
       - name: Check the installed GUI
         env:
           QT_QUICK_BACKEND: software
