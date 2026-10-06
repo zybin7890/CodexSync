@@ -16,7 +16,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates git build-essential cmake ninja-build pkg-config dpkg-dev file \
+            ca-certificates git build-essential cmake ninja-build pkg-config dpkg-dev file python3 \
             libsodium-dev libcurl4-openssl-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev \
             qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtqml-workerscript \
@@ -35,6 +35,9 @@ jobs:
           apt-get install -y ./dist/*.deb
           /usr/bin/codex-sync --help
           dpkg-query -W -f='${Package} ${Version} ${Architecture}\n' codex-sync
+          python3 tests/client_import_cli.py /usr/bin/codex-sync /tmp/codexsync-client-import
+          /usr/bin/codex-sync disclaimer | grep -q AGPL-3.0-only
+          test -s /usr/share/doc/codex-sync/DISCLAIMER.md
       - name: Check the installed GUI
         env:
           QT_QUICK_BACKEND: software
@@ -63,8 +66,10 @@ jobs:
             cat "$GITHUB_WORKSPACE/dist/gui-smoke/gui-ready.json"
           '
           cat > "$GITHUB_WORKSPACE/build/google-ui-test.json" <<EOF
-          {"format":1,"device":"0123456789abcdef0123456789abcdef","state":"$HOME/state","roots":[{"id":"codex_home","path":"$CODEX_HOME"}],"remote":{"provider":"google_drive","client_id":"preview.apps.googleusercontent.com","repository":"default"},"exclude":[]}
+          {"format":1,"device":"0123456789abcdef0123456789abcdef","state":"$HOME/state","roots":[{"id":"codex_home","path":"$CODEX_HOME"}],"remote":{"provider":"google_drive","repository":"default"},"exclude":[]}
           EOF
+          /usr/bin/codex-sync keygen --output "$HOME/google-ui.key"
+          printf '%s' '{"installed":{"client_id":"preview.apps.googleusercontent.com","client_secret":"synthetic-ui-secret"}}' | CXS_KEY_FILE="$HOME/google-ui.key" /usr/bin/codex-sync google-client-import --config "$GITHUB_WORKSPACE/build/google-ui-test.json"
           mkdir -p dist/google-gui-smoke
           xvfb-run -a sh -eu -c '
             /usr/bin/CodexSync --config "$GITHUB_WORKSPACE/build/google-ui-test.json" --ui-smoke "$GITHUB_WORKSPACE/dist/google-gui-smoke" > "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui.log" 2>&1 &
@@ -80,6 +85,16 @@ jobs:
             if grep -E "Error decoding|failed to load|is not installed|is not a type" "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui.log"; then exit 1; fi
             cat "$GITHUB_WORKSPACE/dist/google-gui-smoke/gui-ready.json"
           '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for folder in ('gui-smoke', 'google-gui-smoke'):
+              report = json.loads((Path('dist') / folder / 'gui-ready.json').read_text())
+              assert report['backend_operations'] == 0 and report['screenshots'] == 9
+              for field in ('notice_first_run', 'notice_unchecked_disabled', 'notice_operation_gate', 'notice_acknowledgement_persisted'):
+                  assert report[field], field
+          print('DEBIAN_GUI_NOTICE_PASS: first-run gate, explicit acknowledgement, persistent local record, no backend operations')
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

@@ -4,14 +4,16 @@
 
 Codex 本地数据的加密备份与同步工具，使用 C23 / C++23、Qt 6，支持 WebDAV、Google Drive 与本地仓库。提供 Windows 11 风格 GUI、终端 CLI、HTTP API 与 C API。非 OpenAI 官方项目。
 
-**开发预览，尚非生产版本。** Google Drive 提供浏览器 OAuth 授权、令牌续期与加密快照；协议测试使用隔离的本地模拟服务，不等于真实 Google 账号验收。真实 Google Drive / WebDAV 服务端互操作及跨设备迁移尚未验收。请先使用测试数据，不要直接覆盖唯一的数据副本。
+**开发预览，尚非生产版本。** Google Drive 提供浏览器 OAuth 授权、令牌续期与加密快照。2026-10-07 已在 Windows 上完成真实 Google 账号的 OAuth、76 字节自造样本加密上传、去重、历史列举和逐字节一致恢复；未读取真实 Codex 数据。协议测试另外使用隔离的本地模拟服务。Debian 真实 Google 账号授权、真实 WebDAV 服务端互操作、大规模数据及跨设备迁移尚未验收。请先使用测试数据，不要直接覆盖唯一的数据副本。
+
+**使用前请阅读 [使用风险与免责声明](DISCLAIMER.md)。** GUI 首次使用需明确勾选已阅读，声明版本更新后会再次提示；GUI 未确认前不会启动授权、同步、恢复或 API。阅读记录只保存在本机，不上传。应用设置可随时重新查看；终端运行 `codex-sync disclaimer`，HTTP/C API 可请求 `{"op":"disclaimer"}`，不增加交互提示以免破坏自动化。此提示不限制开源许可证权利，也不要求放弃法定权利。
 
 ## 下载与运行
 
-[v0.2.0 预览版](https://github.com/zybin7890/CodexSync/releases/tag/v0.2.0) 提供 Windows x64 ZIP、Debian 13 amd64 DEB 与 `SHA256SUMS`。旧版仍可在 Releases 页面下载。
+[v0.3.0 预览版](https://github.com/zybin7890/CodexSync/releases/tag/v0.3.0) 提供 Windows x64 ZIP、Debian 13 amd64 DEB 与 `SHA256SUMS`。旧版仍可在 Releases 页面下载。
 
 - Windows 11：解压全部文件，运行 `CodexSync.exe`；终端使用 `codex-sync.exe`。已包含 Qt 与应用本地 VC 运行库，无需安装 Qt。当前未签名，可能出现 SmartScreen 提示。
-- Debian 13：运行 `sudo apt install ./CodexSync-v0.2.0-debian13-amd64.deb`，随后启动 `CodexSync` 或 `codex-sync --help`。依赖由 apt 安装；该包不面向 Debian 12。Windows 使用 FluentWinUI3 控件，Debian 使用 Fusion 控件，保留相同的设置页布局。
+- Debian 13：运行 `sudo apt install ./CodexSync-v0.3.0-debian13-amd64.deb`，随后启动 `CodexSync` 或 `codex-sync --help`。依赖由 apt 安装；该包不面向 Debian 12。Windows 使用 FluentWinUI3 控件，Debian 使用 Fusion 控件，保留相同的设置页布局。
 - HTTP API 由终端程序的 `serve` 命令提供；C API 使用附带的动态库与头文件。
 
 ## 数据范围
@@ -95,8 +97,10 @@ codex-sync serve --config /absolute/path/sync.json --port 17841
 ### 授权与配置
 
 1. 在自己的 Google Cloud 项目启用 Drive API，创建 **Desktop app** 类型的 OAuth 客户端；按项目要求配置授权用户。所有同步设备使用同一 OAuth 应用、Google 账号、仓库 ID 与主密钥。
-2. GUI 的“连接与加密”选择 **Google Drive**，填写 Client ID（若该客户端需要，也填写 Client Secret），选择主密钥，点击“在浏览器中授权”。只申请 `https://www.googleapis.com/auth/drive.appdata`，采用回环回调、随机 state 与 PKCE S256；不要求整个网盘权限。
+2. GUI 的“连接与加密”选择 **Google Drive**，选择主密钥，点击“登录 Google”。已安全配置应用的设备无需填写 Client ID；自己的 OAuth 应用仍可在“高级 OAuth 设置”填写。只申请 `https://www.googleapis.com/auth/drive.appdata`，采用回环回调、随机 state 与 PKCE S256；不要求整个网盘权限。
 3. 每台设备分别授权。刷新令牌与 Client Secret 用主密钥加密保存在 `state/google-oauth.cxs`；状态目录必须与同步数据根目录分离，凭据不上传、不写进普通配置。密钥更换后需重新授权。
+
+应用配置不随公开源码或安装包分发。Windows 自动读取当前用户 `%LOCALAPPDATA%/CodexSync/credentials/google-desktop-client.dpapi` 的 DPAPI 加密配置。Windows / Debian 也支持一次性通过 `google-client-import --config FILE` 从标准输入导入 Google Desktop 客户端 JSON：立即用 `CXS_KEY_FILE` 加密到 `state/google-client.cxs`，不输出凭据、不覆盖已有配置。不要将真实凭据放入命令参数或示例脚本。导入后 GUI / 终端登录无需手动输入 Client ID；已有授权可复用加密文件中的应用配置。新下载的公开版仍需安全配置应用，不能宣称所有设备开箱即用。
 
 参阅 [Google 桌面 OAuth 文档](https://developers.google.com/identity/protocols/oauth2/native-app) 与 [应用专用数据空间](https://developers.google.com/workspace/drive/api/guides/appdata)。网盘网页不会直接显示应用专用空间中的文件。Google 项目测试模式或账号策略可能限制令牌有效期；失效时重新授权。
 

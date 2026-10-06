@@ -105,7 +105,11 @@ GoogleDrive::GoogleDrive(const Json& config, const Json& secrets) {
         client_secret_ = credentials.value("client_secret", client_secret_);
         if ((!remote.value("client_id", std::string{}).empty() || !env("CXS_GOOGLE_CLIENT_ID").empty()) && google_client_id(remote) != client_id_) throw std::runtime_error("Google OAuth client changed; authorize again");
         for (auto field : {"refresh_token", "client_secret"}) if (credentials.contains(field)) wipe(credentials[field].get_ref<std::string&>());
-    } else if (!refresh_token_.empty()) client_id_ = google_client_id(remote);
+    } else if (!refresh_token_.empty()) {
+        auto client = google_oauth_client(config, secrets);
+        client_id_ = std::move(client.id);
+        client_secret_ = std::move(client.secret);
+    }
     if (!access_token_.empty()) expiry_ = std::chrono::steady_clock::now() + std::chrono::minutes(50);
 }
 GoogleDrive::~GoogleDrive() { wipe(access_token_); wipe(refresh_token_); wipe(client_secret_); }

@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "disclaimer.hpp"
 #include "codex_sync.h"
 #include <sodium.h>
 #include <sqlite3.h>
@@ -191,7 +192,7 @@ Json discover(){auto home=env("CODEX_HOME");
     resolve_history_roots(config);
     return config;
 }
-Json execute(Json request){if(sodium_init()<0)throw std::runtime_error("crypto initialization failed");auto op=request.at("op").get<std::string>();if(op=="discover")return discover();auto config=load_config(path(request.at("config")));if(op=="conversations")return conversation_inventory(config);if(op=="scan"){
+Json execute(Json request){if(sodium_init()<0)throw std::runtime_error("crypto initialization failed");auto op=request.at("op").get<std::string>();if(op=="disclaimer")return {{"version",std::string(disclaimer_version)},{"text",std::string(disclaimer_text)}};if(op=="discover")return discover();auto config=load_config(path(request.at("config")));if(op=="conversations")return conversation_inventory(config);if(op=="scan"){
         // Read file metadata and thread-index references only, not messages or credentials.
         Json result={{"roots",Json::array()},{"files",0},{"bytes",0},{"skipped_links",Json::array()}};uint64_t count=0,size=0;for(auto& r:config.at("roots")){auto p=path(r.at("path"));if(!fs::is_directory(p)||link(p))throw std::runtime_error("missing or linked data root");uint64_t n=0,b=0;for(fs::recursive_directory_iterator i(p),end;i!=end;++i){if(link(i->path())){result["skipped_links"].push_back(utf8(i->path()));if(i->is_directory())i.disable_recursion_pending();continue;}auto relative=utf8(i->path().lexically_relative(p));if(excluded_file(config,relative)){if(i->is_directory())i.disable_recursion_pending();continue;}if(i->is_regular_file()&&!volatile_file(relative)){++n;b+=i->file_size();}}count+=n;size+=b;auto v=r;v["files"]=n;v["bytes"]=b;result["roots"].push_back(v);}result["files"]=count;result["bytes"]=size;result["conversation_history"]=conversation_inventory(config);return result;
     }
@@ -216,5 +217,5 @@ Json execute(Json request){if(sodium_init()<0)throw std::runtime_error("crypto i
 extern "C" {
 int cxs_run(const char* request,char** result){if(!result)return 1;*result=nullptr;int code=0;cxs::Json value;try{if(!request)throw std::runtime_error("null request");value={{"ok",true},{"result",cxs::execute(cxs::Json::parse(request))}};}catch(const std::exception& e){code=1;value={{"ok",false},{"error",e.what()}};}catch(...){code=1;value={{"ok",false},{"error","unexpected internal error"}};}auto s=value.dump();*result=static_cast<char*>(std::malloc(s.size()+1));if(!*result)return 2;std::memcpy(*result,s.c_str(),s.size()+1);return code;}
 void cxs_free(char* p){if(p){sodium_memzero(p,std::strlen(p));std::free(p);}}
-const char* cxs_version(){return "0.2.0";}
+const char* cxs_version(){return "0.3.0";}
 }

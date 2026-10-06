@@ -15,6 +15,13 @@ ApplicationWindow {
     font.weight: Font.DemiBold
     property int currentPage: 0
     property bool compact: width < 920
+    readonly property bool noticeVisible: usageNotice.visible
+    Component.onCompleted: { if (!ui.noticeAcknowledged) usageNotice.open() }
+    Connections { target: ui; function onNoticeRequested() { usageNotice.open() } }
+    function acknowledgeNoticeForSmoke() {
+        noticeRead.checked = true
+        if (noticeContinue.enabled && ui.acknowledgeNotice()) usageNotice.close()
+    }
     readonly property bool dark: Application.styleHints.colorScheme === Qt.Dark
     readonly property color canvas: dark ? "#202020" : "#f3f3f3"
     readonly property color surface: dark ? "#2b2b2b" : "#ffffff"
@@ -303,13 +310,15 @@ ApplicationWindow {
                 visible: window.provider === "google_drive"
                 title: "Google Drive"; description: "应用专用空间 · 不访问网盘其他文件"; iconName: "cloud"; expandAvailable: true; expanded: true
                 trailing: ui.googleAuthorized ? "授权已保存" : "未授权"
-                FieldLabel { text: "桌面应用 OAuth Client ID" }
-                TextField { Layout.fillWidth: true; text: ui.configuration.remote.client_id || ""; placeholderText: "…apps.googleusercontent.com 或 CXS_GOOGLE_CLIENT_ID"; onEditingFinished: ui.setSetting("client_id", text); Accessible.name: "Google OAuth Client ID" }
-                FieldLabel { text: "Client Secret（若该 OAuth 客户端需要）" }
-                TextField { Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: "不写入配置文件"; onEditingFinished: ui.setSetting("google_client_secret", text); Accessible.name: "Google OAuth Client Secret" }
+                Caption { text: ui.googleClientReady ? "已发现本机应用配置，无需填写 Client ID。" : "本机尚无应用配置；可安全导入，或展开高级设置使用自己的桌面 OAuth 应用。" }
+                CheckBox { id: googleAdvanced; text: "高级 OAuth 设置"; checked: !ui.googleClientReady }
+                FieldLabel { visible: googleAdvanced.checked; text: "桌面应用 OAuth Client ID" }
+                TextField { visible: googleAdvanced.checked; Layout.fillWidth: true; text: ui.configuration.remote.client_id || ""; placeholderText: "…apps.googleusercontent.com 或 CXS_GOOGLE_CLIENT_ID"; onEditingFinished: ui.setSetting("client_id", text); Accessible.name: "Google OAuth Client ID" }
+                FieldLabel { visible: googleAdvanced.checked; text: "Client Secret（若该 OAuth 客户端需要）" }
+                TextField { visible: googleAdvanced.checked; Layout.fillWidth: true; echoMode: TextInput.Password; placeholderText: "不写入配置文件"; onEditingFinished: ui.setSetting("google_client_secret", text); Accessible.name: "Google OAuth Client Secret" }
                 FieldLabel { text: "仓库 ID" }
                 TextField { Layout.fillWidth: true; text: ui.configuration.remote.repository || "default"; placeholderText: "default"; onEditingFinished: ui.setSetting("repository", text); Accessible.name: "Google Drive 仓库 ID" }
-                RowLayout { spacing: 10; Button { text: ui.googleAuthorized ? "重新授权" : "在浏览器中授权"; highlighted: true; enabled: !ui.busy && ui.keyFile.length > 0; onClicked: ui.authorizeGoogle() } Caption { text: ui.busy ? ui.status : "先选择主密钥；浏览器授权限时 120 秒" } }
+                RowLayout { spacing: 10; Button { text: ui.googleAuthorized ? "重新登录 Google" : "登录 Google"; highlighted: enabled; enabled: !ui.busy && ui.keyFile.length > 0 && ui.googleClientReady; onClicked: ui.authorizeGoogle() } Caption { text: ui.busy ? ui.status : "先选择主密钥；浏览器授权限时 120 秒" } }
                 Caption { text: "只申请 drive.appdata 权限。令牌用主密钥加密后保存在本地状态目录，不上传。同一账号的各设备使用相同 OAuth 应用与仓库 ID，分别授权。" }
                 Button { text: "查看 OAuth 配置说明"; flat: true; onClicked: Qt.openUrlExternally("https://developers.google.com/identity/protocols/oauth2/native-app") }
             }
@@ -395,7 +404,35 @@ ApplicationWindow {
             Setting { title: "同步配置文件"; description: ui.configFile.length > 0 ? ui.configFile : "尚未保存配置"; iconName: "folder"; expandAvailable: true; expanded: true; RowLayout { Button { text: "打开配置"; onClicked: ui.openConfig() } Button { text: "保存配置"; onClicked: ui.saveConfig() } } }
             Section { text: "关于" }
             Setting { title: "CodexSync"; description: "C++23 · Qt Quick · " + (Qt.platform.os === "windows" ? "FluentWinUI3" : "Fusion"); iconName: "arrow_sync"; trailing: "v0.2.0 预览" }
+            Setting { title: "使用风险与免责声明"; description: "非官方开发预览 · 无担保 · 请保留独立备份"; iconName: "shield_lock"; expandAvailable: true; expanded: true; Button { text: "查看声明"; onClicked: usageNotice.open() } }
             Caption { text: "支持本地仓库、WebDAV 与 Google Drive。Google Drive 的真实账号互操作尚未验收；请先用测试数据，保留独立副本。"; Layout.topMargin: 16 }
+        }
+    }
+    Dialog {
+        id: usageNotice
+        objectName: "usageNotice"
+        title: "使用风险与免责声明"
+        anchors.centerIn: parent
+        width: Math.min(window.width - 48, 760)
+        height: Math.min(window.height - 48, 650)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        contentItem: ColumnLayout {
+            spacing: 14
+            Label { text: "请先阅读：对话和密钥可能含敏感信息，同步不能代替独立备份。"; color: window.ink; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: 14 }
+            ScrollView {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true
+                ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                TextArea { text: ui.disclaimerText; textFormat: TextEdit.MarkdownText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: window.ink; font.pixelSize: 14; font.weight: Font.Medium; background: null; Accessible.name: "使用风险与免责声明全文" }
+            }
+            CheckBox { id: noticeRead; text: "我已阅读并了解上述风险"; visible: !ui.noticeAcknowledged; Accessible.name: text }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 12
+                Caption { text: "可滚动阅读全文；阅读记录仅保存在本机。"; Layout.fillWidth: true }
+                Button { text: ui.noticeAcknowledged ? "关闭" : "退出"; onClicked: ui.noticeAcknowledged ? usageNotice.close() : Qt.quit() }
+                Button { id: noticeContinue; objectName: "noticeContinue"; text: "继续使用"; highlighted: enabled; visible: !ui.noticeAcknowledged; enabled: noticeRead.checked; onClicked: { if (ui.acknowledgeNotice()) usageNotice.close() } }
+            }
         }
     }
     Dialog {

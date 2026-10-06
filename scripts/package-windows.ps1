@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$RuntimeDirectory,
     [Parameter(Mandatory=$true)][string]$LicenseDirectory,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [string]$Version = '0.2.0'
+    [string]$Version = '0.3.0'
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
@@ -24,7 +24,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
 foreach ($file in Get-ChildItem -LiteralPath $RuntimeDirectory -File -Filter '*.dll') {
     Copy-Item -LiteralPath $file.FullName -Destination $destination
 }
-foreach ($file in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md')) {
+foreach ($file in @('README.md','DISCLAIMER.md','LICENSE','THIRD_PARTY_NOTICES.md')) {
     Copy-Item -LiteralPath (Join-Path $project $file) -Destination $destination
 }
 New-Item -ItemType Directory -Path (Join-Path $destination 'include') -Force | Out-Null
@@ -45,7 +45,7 @@ Microsoft VC runtime DLLs are unmodified app-local redistributable runtime files
 "@
 [IO.File]::WriteAllText((Join-Path $destination 'DEPENDENCY_SOURCES.txt'), $sourceInfo, [Text.UTF8Encoding]::new($false))
 $forbidden = @(Get-ChildItem -LiteralPath $destination -Recurse -File | Where-Object {
-    $_.Name -match '\.(sqlite.*|db.*|jsonl.*|key|pem|pfx|p12|cxs|pdb|log)$' -or $_.Name -match '^(auth\.json|config\.toml.*|sync\.json|history-coverage\.json|\.env.*)$'
+    $_.Name -match '\.(sqlite.*|db.*|jsonl.*|key|pem|pfx|p12|cxs|dpapi|pdb|log)$' -or $_.Name -match '^(auth\.json|config\.toml.*|sync\.json|history-coverage\.json|\.env.*)$'
 })
 if ($forbidden.Count) { throw 'Unexpected local data or debug/test artifacts in package' }
 Write-Output $destination

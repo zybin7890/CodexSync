@@ -9,6 +9,7 @@
 #include <thread>
 #ifdef _WIN32
 #include <windows.h>
+#include <wincrypt.h>
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -228,10 +229,53 @@ int main(int argc, char** argv) {
         DriveFixture fixture;
         Json config{{"format", 1}, {"device", cxs::random_id()}, {"state", cxs::utf8(base / "state")}, {"roots", Json::array({{{"id", "codex_home"}, {"path", cxs::utf8(home)}}})}, {"exclude", Json::array()},
             {"remote", {{"provider", "google_drive"}, {"client_id", "fixture.apps.googleusercontent.com"}, {"repository", "default"}, {"allow_loopback_http", true}, {"test_api_origin", fixture.origin}, {"test_token_origin", fixture.origin}}}};
+        auto managed = config;
+        managed["remote"].erase("client_id"); managed["remote"].erase("test_api_origin"); managed["remote"].erase("test_token_origin");
+        managed["state"] = cxs::utf8(base / "managed-state");
+        auto profile_text = Json{{"installed", {{"client_id", "fixture.apps.googleusercontent.com"}, {"client_secret", "fixture-client-secret"}}}}.dump();
+        Bytes profile(profile_text.begin(), profile_text.end());
+        check(cxs::google_import_client(managed, secrets, profile).at("client_imported"), "secure client import failed");
+        auto profile_file = cxs::google_credential_path(managed).parent_path() / "google-client.cxs";
+        auto protected_profile = cxs::read_bytes(profile_file);
+        check(std::string(protected_profile.begin(), protected_profile.end()).find("fixture-client-secret") == std::string::npos, "client profile stored in plaintext");
+        { auto client = cxs::google_oauth_client(managed, secrets); check(client.id == "fixture.apps.googleusercontent.com" && client.secret == "fixture-client-secret" && cxs::google_client_ready(managed), "managed no-ID client lookup failed"); }
+        bool client_rejected = false;
+        try { cxs::google_import_client(managed, secrets, profile); } catch (...) { client_rejected = true; }
+        check(client_rejected, "import overwrote existing private profile");
+        auto invalid_key = secrets; invalid_key["key_hex"] = std::string(64, '0'); client_rejected = false;
+        try { cxs::google_oauth_client(managed, invalid_key); } catch (...) { client_rejected = true; }
+        check(client_rejected, "managed client accepted wrong key");
+        auto loopback_managed = managed; loopback_managed["remote"]["test_token_origin"] = fixture.origin;
+        client_rejected = false;
+        try { cxs::google_oauth_client(loopback_managed, secrets); } catch (...) { client_rejected = true; }
+        check(client_rejected && !cxs::google_client_ready(loopback_managed), "managed real client could leak to test endpoint");
+        { auto client = cxs::google_oauth_client(config, {{"google_client_secret", "fixture-explicit-secret"}}); check(client.secret == "fixture-explicit-secret", "advanced explicit client override regressed"); }
+#ifdef _WIN32
+        const auto previous_local = cxs::env("LOCALAPPDATA");
+        auto local = base / "windows-local";
+        check(SetEnvironmentVariableW(L"LOCALAPPDATA", local.c_str()), "cannot isolate DPAPI client fixture");
+        auto dpapi_config = managed; dpapi_config["state"] = cxs::utf8(base / "dpapi-state");
+        auto system_file = local / "CodexSync/credentials/google-desktop-client.dpapi";
+        auto dpapi_text = Json{{"format", 1}, {"client_id", "fixture.apps.googleusercontent.com"}, {"client_secret", "fixture-dpapi-secret"}}.dump();
+        const char entropy[] = "CodexSync-google-client-v1";
+        DATA_BLOB input{static_cast<DWORD>(dpapi_text.size()), reinterpret_cast<BYTE*>(dpapi_text.data())};
+        DATA_BLOB context{sizeof(entropy)-1, reinterpret_cast<BYTE*>(const_cast<char*>(entropy))};
+        DATA_BLOB protected_blob{};
+        check(CryptProtectData(&input, nullptr, &context, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &protected_blob), "fixture DPAPI encryption failed");
+        cxs::write_atomic(system_file, Bytes(protected_blob.pbData, protected_blob.pbData+protected_blob.cbData)); LocalFree(protected_blob.pbData);
+        { auto client = cxs::google_oauth_client(dpapi_config, secrets); check(client.secret == "fixture-dpapi-secret" && cxs::google_client_ready(dpapi_config), "Windows private client lookup failed"); }
+        text_file(system_file, "invalid encrypted fixture"); client_rejected = false;
+        try { cxs::google_oauth_client(dpapi_config, secrets); } catch (...) { client_rejected = true; }
+        check(client_rejected, "damaged Windows profile accepted");
+        if (previous_local.empty()) unset("LOCALAPPDATA");
+        else check(SetEnvironmentVariableW(L"LOCALAPPDATA", cxs::path(previous_local).c_str()), "cannot restore fixture environment");
+#endif
         auto authorized = cxs::google_authorize(config, secrets, [&](const auto& url) { fixture.callback(url); });
         check(authorized.at("authorized") == true, "Google authorization failed");
         auto credential = cxs::read_bytes(cxs::google_credential_path(config));
         check(std::string(credential.begin(), credential.end()).find("fixture-refresh") == std::string::npos, "refresh token stored in plaintext");
+        auto reused = config; reused["remote"].erase("client_id"); reused["remote"].erase("test_api_origin"); reused["remote"].erase("test_token_origin");
+        { auto client = cxs::google_oauth_client(reused, secrets); check(client.id == "fixture.apps.googleusercontent.com", "saved authorization did not retain app identity"); }
         bool denied = false;
         try { cxs::google_authorize(config, secrets, [&](const auto& url) { fixture.callback(url, true); }); } catch (...) { denied = true; }
         check(denied && cxs::read_bytes(cxs::google_credential_path(config)) == credential, "declined consent damaged previous authorization");

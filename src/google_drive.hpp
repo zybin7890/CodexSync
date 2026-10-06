@@ -22,6 +22,17 @@ private:
     std::string name(const std::string& relative) const;
 };
 std::string google_client_id(const Json& remote);
+struct GoogleClient {
+    std::string id, secret;
+    GoogleClient(std::string id, std::string secret);
+    ~GoogleClient();
+    GoogleClient(const GoogleClient&) = delete;
+    GoogleClient& operator=(const GoogleClient&) = delete;
+    GoogleClient(GoogleClient&&) = default;
+};
+GoogleClient google_oauth_client(const Json& config, const Json& secrets);
+bool google_client_ready(const Json& config);
+Json google_import_client(const Json& config, const Json& secrets, const Bytes& profile);
 std::string google_token_url(const Json& remote);
 fs::path google_credential_path(const Json& config);
 }

@@ -23,7 +23,9 @@ Json google_authorize(const Json& config, const Json& secrets, const std::functi
     if (sodium_init() < 0) throw std::runtime_error("crypto initialization failed");
     const auto& remote = config.at("remote");
     if (remote.value("provider", std::string{}) != "google_drive") throw std::runtime_error("select the Google Drive provider first");
-    const auto client = google_client_id(remote), token_url = google_token_url(remote);
+    const auto application = google_oauth_client(config, secrets);
+    const auto& client = application.id;
+    const auto token_url = google_token_url(remote);
     const auto destination = google_credential_path(config);
     PrivateKey key{credential_key(secrets)};
     std::string verifier = random_id() + random_id(), state = random_id() + random_id();
@@ -68,7 +70,7 @@ Json google_authorize(const Json& config, const Json& secrets, const std::functi
         }
         stop();
         if (denied) throw std::runtime_error("Google authorization was declined");
-        auto secret = secrets.value("google_client_secret", env("CXS_GOOGLE_CLIENT_SECRET"));
+        auto secret = application.secret;
         auto form = "grant_type=authorization_code&client_id=" + url_encode(client) + "&code=" + url_encode(code) + "&code_verifier=" + url_encode(verifier) + "&redirect_uri=" + url_encode(redirect);
         if (!secret.empty()) form += "&client_secret=" + url_encode(secret);
         Bytes body(form.begin(), form.end()); wipe(form); wipe(code); wipe(verifier);

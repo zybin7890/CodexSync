@@ -50,6 +50,8 @@ static void set_env(const char* name, const fs::path& path) {
 
 int main(int argc, char** argv) {
     try {
+        const auto notice = cxs::execute({{"op", "disclaimer"}});
+        check(notice.at("version") == "2026-10-07" && notice.at("text").get<std::string>().find("AGPL-3.0-only") != std::string::npos, "disclaimer API must work without a data configuration");
         const auto base = fs::absolute(argc > 1 ? cxs::path(argv[1]) : fs::current_path() / "history-contracts") / cxs::random_id();
         const auto home = base / "home";
         const auto user = base / "user";
