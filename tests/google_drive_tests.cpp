@@ -177,7 +177,7 @@ public:
         });
         server.Post("/upload/drive/v3/files", [&](const auto& request, auto& response) {
             check(request.get_param_value("uploadType") == "resumable", "resumable upload not used");
-            auto metadata = Json::parse(request.body);
+            Json metadata = Json::parse(request.body);
             check(metadata.at("parents") == Json::array({"appDataFolder"}), "upload escaped appDataFolder");
             check(metadata.at("name").get<std::string>().starts_with("codex-sync-v1.default."), "wrong repository namespace");
             auto id = metadata.at("id").get<std::string>();
