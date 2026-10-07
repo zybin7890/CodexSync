@@ -91,6 +91,33 @@ Json execute_impl(Json request){if(sodium_init()<0)throw std::runtime_error("cry
         // Read file metadata and thread-index references only, not messages or credentials.
         Json result={{"roots",Json::array()},{"files",0},{"bytes",0},{"skipped_links",Json::array()}};uint64_t count=0,size=0;for(auto& r:config.at("roots")){if(!r.value("enabled",true)){auto v=r;v["files"]=0;v["bytes"]=0;result["roots"].push_back(v);continue;}auto p=path(r.at("path"));if(!fs::is_directory(p)||link(p))throw std::runtime_error("missing or linked data root");uint64_t n=0,b=0;for(fs::recursive_directory_iterator i(p),end;i!=end;++i){if(link(i->path())){result["skipped_links"].push_back(utf8(i->path()));if(i->is_directory())i.disable_recursion_pending();continue;}auto relative=utf8(i->path().lexically_relative(p));if(excluded_file(config,relative,r.at("id"))){if(i->is_directory())i.disable_recursion_pending();continue;}if(i->is_regular_file()&&!volatile_file(relative)&&selected_file(config,r.at("id"),relative)){++n;b+=i->file_size();}}count+=n;size+=b;auto v=r;v["files"]=n;v["bytes"]=b;result["roots"].push_back(v);}result["files"]=count;result["bytes"]=size;result["conversation_history"]=conversation_inventory(config);return result;
     }
+    if(op=="changes"){
+        SecretKey key(request);auto state=path(config.at("state"));auto marker=state/"key-check.cxs";
+        if(fs::exists(marker))json(open(read_bytes(marker,1024),key.value,"state-key-v1"));
+        ChangeCatalog catalog(state,selection_identity(config,key.value),key.value);SnapshotJob job(state,key.value);
+        if(job.pending())return {{"pending_job",true},{"files",0},{"bytes",0},{"body_bytes",0}};
+        std::map<std::string,const Json*> previous;const Json empty_records=Json::object();const auto& previous_records=catalog.data.contains("files")?catalog.data.at("files"):empty_records;
+        for(const auto& [name,record]:previous_records.items()){
+            previous[name]=&record.at("identity").at("main");
+            if(record.at("entry").value("sqlite",false))for(auto suffix:{"-wal","-journal"}){
+                const auto& side=record.at("identity").at(suffix);if(side.value("exists",false))previous[name+suffix]=&side;
+            }
+        }
+        uint64_t files=0,bytes=0,checked=0;
+        for(const auto& root:config.at("roots")){if(!root.value("enabled",true))continue;auto id=root.at("id").get<std::string>();auto directory=path(root.at("path"));
+            if(!fs::is_directory(directory)||link(directory))throw std::runtime_error("missing or linked data root");
+            for(fs::recursive_directory_iterator it(directory),end;it!=end;++it){auto relative=utf8(it->path().lexically_relative(directory));
+                if(link(it->path())||excluded_file(config,relative,id)){if(it->is_directory())it.disable_recursion_pending();continue;}
+                if(!it->is_regular_file()||!selected_file(config,id,relative))continue;
+                if(volatile_file(relative)&&!relative.ends_with("-wal"))continue;
+                auto identity=source_identity(it->path());auto found=previous.find(id+"/"+relative);++checked;
+                if(found==previous.end()||!identity.value("reliable",false)||*found->second!=identity){++files;bytes+=identity.value("size",uint64_t(0));}
+                if(found!=previous.end())previous.erase(found);
+            }
+        }
+        const auto deleted=previous.size();files+=deleted;
+        return {{"pending_job",false},{"files",files},{"bytes",bytes},{"deleted_files",deleted},{"metadata_checked",checked},{"body_bytes",0}};
+    }
     if(std::none_of(config.at("roots").begin(),config.at("roots").end(),[](const Json& r){return r.value("enabled",true);}))throw std::runtime_error("select at least one enabled data root");
     if(config.value("payload_mode",std::string("encrypted"))!="encrypted"&&(op=="sync"||request.value("apply",false)))throw std::runtime_error("original and selective backups restore to a separate directory; direct application requires the encrypted SQLite recovery mode");
     OperationRuntime c(config,request);

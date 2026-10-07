@@ -46919,7 +46919,11 @@ static int unixOpen(
     ** in that case we do not want to attempt the chown().
     */
     if( openMode && (flags & (SQLITE_OPEN_WAL|SQLITE_OPEN_MAIN_JOURNAL))!=0 ){
-      robustFchown(fd, uid, gid);
+      /* CodexSync: avoid changing ctime when ownership already matches. */
+      struct stat owner;
+      if( osFstat(fd, &owner)!=0 || owner.st_uid!=uid || owner.st_gid!=gid ){
+        robustFchown(fd, uid, gid);
+      }
     }
   }
   assert( fd>=0 );

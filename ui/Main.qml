@@ -701,7 +701,8 @@ ApplicationWindow {
                 Caption { text: ui.syncMode === "bidirectional" ? qsTr("仅手动执行：双向合并前必须关闭 Codex，并确认操作；冲突保留版本，不传播删除。") : ui.syncMode === "download" ? qsTr("仅手动执行：下载至独立恢复目录，绝不覆盖本地源目录。") : qsTr("可手动上传或开启自动备份；不自动恢复或覆盖本地数据。") }
             }
             Setting {
-                title: qsTr("自动同步"); description: qsTr("默认关闭 · 仅在程序运行期间，每 5 分钟增量加密上传备份"); iconName: "arrow_sync"
+                title: qsTr("后台自动同步"); description: qsTr("默认关闭 · 开启后关闭窗口仍在托盘运行"); iconName: "arrow_sync"
+                objectName: "autoScheduleCard"
                 enabled: true; expanded: true
                 Switch {
                     objectName: "autoSyncSwitch"
@@ -711,6 +712,27 @@ ApplicationWindow {
                     onToggled: ui.setAutoSync(checked)
                     Accessible.name: qsTr("自动同步")
                 }
+                ComboBox {
+                    objectName: "autoTriggerCombo"; Layout.fillWidth: true
+                    model: [qsTr("有变更即同步"), qsTr("按时间间隔"), qsTr("按变更数据量")]
+                    currentIndex: ui.autoTrigger === "time" ? 1 : ui.autoTrigger === "amount" ? 2 : 0
+                    enabled: !ui.busy
+                    onActivated: ui.setAutoTrigger(["changes", "time", "amount"][currentIndex])
+                    Accessible.name: qsTr("自动同步触发条件")
+                }
+                RowLayout {
+                    visible: ui.autoTrigger === "time"; Layout.fillWidth: true
+                    Label { text: qsTr("同步间隔"); Layout.fillWidth: true }
+                    SpinBox { objectName: "autoIntervalMinutes"; from: 1; to: 1440; value: ui.autoIntervalMinutes; editable: true; enabled: !ui.busy; onValueModified: ui.setAutoIntervalMinutes(value); Accessible.name: qsTr("同步间隔（分钟）") }
+                    Label { text: qsTr("分钟") }
+                }
+                RowLayout {
+                    visible: ui.autoTrigger === "amount"; Layout.fillWidth: true
+                    Label { text: qsTr("累计变更达到"); Layout.fillWidth: true }
+                    SpinBox { objectName: "autoThresholdMB"; from: 1; to: 1048576; value: ui.autoThresholdMB; editable: true; enabled: !ui.busy; onValueModified: ui.setAutoThresholdMB(value); Accessible.name: qsTr("变更数据阈值（MiB）") }
+                    Label { text: "MiB" }
+                }
+                Caption { visible: ui.autoTrigger === "amount"; text: ui.autoPending + "\n" + qsTr("按变更文件的大小估算，不是实际上传流量。连续变更合并核对；未达阈值不读取文件正文。") }
                 Caption { text: qsTr("只在“仅上传备份”模式可开启；其他方向仅手动执行。开启前请保存配置、设置存储空间并选择主密钥；处理中仍可关闭。") }
             }
             Section { text: qsTr("启动与后台") }

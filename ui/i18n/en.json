@@ -400,5 +400,18 @@
   "已传文件：%1 / %2": "Files uploaded: %1 / %2",
   "已按对话 ID 找到 %1 条路径已变化的记录；原文件与索引保持不变。": "Located %1 records with changed paths by conversation ID. Original files and indexes remain unchanged.",
   "核对云端已有备份": "Checking existing cloud backups",
-  "准备上传已捕获的文件": "Preparing captured files for upload"
+  "准备上传已捕获的文件": "Preparing captured files for upload",
+  "后台自动同步": "Automatic background backup",
+  "默认关闭 · 开启后关闭窗口仍在托盘运行": "Off by default · When enabled, closing the window keeps the app in the tray",
+  "有变更即同步": "On change",
+  "按时间间隔": "At a time interval",
+  "按变更数据量": "At a changed-data threshold",
+  "自动同步触发条件": "Automatic backup trigger",
+  "同步间隔": "Backup interval",
+  "同步间隔（分钟）": "Backup interval (minutes)",
+  "分钟": "minutes",
+  "累计变更达到": "Changed data reaches",
+  "变更数据阈值（MiB）": "Changed-data threshold (MiB)",
+  "待备份变更：%1 个文件 · %2 MiB": "Pending changes: %1 files · %2 MiB",
+  "按变更文件的大小估算，不是实际上传流量。连续变更合并核对；未达阈值不读取文件正文。": "Estimated from changed-file sizes, not actual upload traffic. Continuous changes are checked in batches; file contents are not read below the threshold."
 }

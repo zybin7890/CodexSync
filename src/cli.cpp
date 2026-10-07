@@ -25,6 +25,7 @@ int main(int argc,char** argv){try{
         "  scan --config FILE           file and history-index inventory, no messages or secrets read\n"
         "  conversations --config FILE  audit active + archived rollouts, compressed archives and indexes\n"
         "  progress --config FILE       show latest task progress as JSON\n"
+        "  changes --config FILE        pending file count and bytes, metadata only\n"
         "  resume --config FILE         continue the durable prepared snapshot\n"
         "  pause|cancel --config FILE --job-id ID  control the current task\n"
         "  backup --config FILE         incremental snapshot using configured encryption mode\n"

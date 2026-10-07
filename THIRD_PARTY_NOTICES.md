@@ -14,6 +14,8 @@ The AGPL-3.0-only license applies to original CodexSync work, not to a relicensi
 
 The original CodexSync application mark in `ui/codexsync.svg` and its PNG/ICO renderings are not Microsoft assets.
 
+The bundled SQLite Unix implementation skips redundant WAL/journal ownership changes when UID and GID already match. This preserves file change timestamps during read transactions; required ownership corrections remain enabled.
+
 ## External build/runtime dependencies
 
 - [libsodium](https://github.com/jedisct1/libsodium): ISC.

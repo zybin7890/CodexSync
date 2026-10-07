@@ -14,12 +14,15 @@ int main(int argc,char** argv){try{
     Json config={{"format",1},{"device",cxs::random_id()},{"state",cxs::utf8(state)},{"roots",Json::array({{{"id","fixture"},{"path",cxs::utf8(source)}}})},{"remote",{{"provider","local"},{"directory",cxs::utf8(base/"remote")}}}};
     auto save=[&]{text(config_file,config.dump());};save();
     auto request=[&](const std::string& op){return Json{{"op",op},{"config",cxs::utf8(config_file)},{"key_hex",std::string(64,'a')}};};
+    auto pending=cxs::execute(request("changes"));check(pending.at("files")==2&&pending.at("bytes")==10&&pending.at("body_bytes")==0,"initial pending quantity incorrect");
     auto first=cxs::execute(request("backup"));check(first.at("body_files")==2&&first.at("uploaded_objects")==2,"first capture omitted files");
+    pending=cxs::execute(request("changes"));check(pending.at("files")==0&&pending.at("bytes")==0,"completed backup retained pending quantity");
     auto second=cxs::execute(request("backup"));check(second.at("no_changes")==true&&second.at("body_bytes")==0&&second.at("source_probe_bytes")==0&&second.at("uploaded_objects")==0&&second.at("reused_files")==2,"unchanged backup read source bodies or submitted snapshot");
     check(cxs::execute(request("history")).at("snapshots").size()==1,"no-op created duplicate snapshot");
     auto catalog_file=fs::directory_iterator(state/"catalogs")->path();text(catalog_file,"damaged derived index");auto recovered=cxs::execute(request("backup"));check(recovered.at("no_changes")==true&&recovered.at("body_bytes")==0,"durable completed capture could not rebuild damaged index");
     auto cached_file=fs::directory_iterator(state/"cache")->path();fs::rename(cached_file,base/"retained-cache.cxs");auto repaired=cxs::execute(request("backup"));check(repaired.at("no_changes")==true&&repaired.at("body_files")==1,"missing cached block did not recapture its source file");
     const auto time=fs::last_write_time(source/"one.txt");text(source/"one.txt","ALPHA");fs::last_write_time(source/"one.txt",time);
+    pending=cxs::execute(request("changes"));check(pending.at("files")==1&&pending.at("bytes")==5,"pending quantity missed identity-only rewrite");
     auto changed=cxs::execute(request("backup"));check(changed.at("body_files")==1&&changed.at("body_bytes")==5&&changed.at("reused_files")==1,"same-size rewrite with restored mtime was missed");
     auto empty=request("restore");empty["snapshot"]=changed.at("snapshot");empty["output"]=cxs::utf8(base/"restore");
     auto empty_config=config;empty_config["state"]=cxs::utf8(base/"empty-state");text(base/"empty.json",empty_config.dump());empty["config"]=cxs::utf8(base/"empty.json");cxs::execute(empty);check(cxs::read_bytes(base/"restore/fixture/one.txt")==cxs::Bytes({'A','L','P','H','A'}),"empty-cache restore differs");

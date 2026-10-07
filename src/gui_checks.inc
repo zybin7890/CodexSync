@@ -47,7 +47,7 @@ static void runBackgroundChecks(QApplication& app,Bridge& bridge,const QString& 
     struct CheckState {
         int phase=0,baseline=0;
         qint64 started=QDateTime::currentMSecsSinceEpoch(),deadline=0,quietUntil=0;
-        bool defaultOff=false,noticeGate=false,singleWorker=false,persisted=false,timerTriggered=false,eventTriggered=false,idleQuiet=false,disabledNoOperations=false,failurePaused=false,trayPersisted=false;
+        bool defaultOff=false,noticeGate=false,singleWorker=false,persisted=false,timerTriggered=false,eventTriggered=false,idleQuiet=false,disabledNoOperations=false,failurePaused=false,trayPersisted=false,timeChoice=false,amountChoice=false,thresholdHeld=false;
     };
     auto state=std::make_shared<CheckState>();
     auto poll=new QTimer(&app);poll->setInterval(25);
@@ -58,7 +58,7 @@ static void runBackgroundChecks(QApplication& app,Bridge& bridge,const QString& 
         const auto report=QJsonObject{{"ok",ok},{"detail",detail},{"backend_operations",bridge.backendOperationCount()},
             {"google_login_states",true},{"default_auto_off",state->defaultOff},{"notice_gate",state->noticeGate},{"busy_no_reentry",state->singleWorker},
             {"enabled_persisted",state->persisted},{"real_timer_trigger",state->timerTriggered},{"recursive_event_trigger",state->eventTriggered},{"idle_no_operations",state->idleQuiet},{"disabled_no_operations",state->disabledNoOperations},
-            {"failure_paused_persisted",state->failurePaused},{"tray_preference_persisted",state->trayPersisted},{"provider",QStringLiteral("local")}};
+            {"failure_paused_persisted",state->failurePaused},{"tray_preference_persisted",state->trayPersisted},{"time_schedule_verified",state->timeChoice},{"amount_schedule_verified",state->amountChoice},{"below_threshold_no_backup",state->thresholdHeld},{"provider",QStringLiteral("local")}};
         bool written=output.open(QIODevice::WriteOnly);
         if(written){const auto bytes=QJsonDocument(report).toJson(QJsonDocument::Indented);written=output.write(bytes)==bytes.size()&&output.commit();}
         if(ok&&written)qInfo("BACKGROUND_CHECKS_PASS: local timer, persistence, no reentry, failure pause, tray preference");
@@ -140,7 +140,36 @@ static void runBackgroundChecks(QApplication& app,Bridge& bridge,const QString& 
                 if(!require(bridge.backendOperationCount()==state->baseline+1,QStringLiteral("paused failure repeated backend work")))return;
                 bridge.setCloseToTray(true);Bridge trayReplay(bridge.configFile(),folder);state->trayPersisted=trayReplay.closeToTray();
                 if(!require(state->trayPersisted,QStringLiteral("close-to-tray preference did not persist")))return;
-                finish(true,QStringLiteral("all isolated local background checks passed"));break;
+                bridge.prepareBackgroundFixture(folder+"/schedules");bridge.setAutoTrigger("time");bridge.setAutoIntervalMinutes(1);bridge.setAutoSync(true);bridge.setCheckInterval(350);
+                Bridge scheduleReplay(bridge.configFile(),folder);state->timeChoice=scheduleReplay.autoTrigger()=="time"&&scheduleReplay.autoIntervalMinutes()==1&&bridge.closeToTray();
+                if(!require(state->timeChoice,QStringLiteral("time schedule or background preference did not persist")))return;
+                state->baseline=bridge.backendOperationCount();bridge.reconcileChangesForCheck();
+                state->quietUntil=now+100;state->phase=8;state->deadline=now+8000;break;
+            }
+            case 8:{
+                if(!require(bridge.backendOperationCount()==state->baseline,QStringLiteral("time schedule triggered before its timer")))return;
+                if(now<state->quietUntil)return;state->phase=9;break;
+            }
+            case 9:{
+                if(bridge.backendOperationCount()==state->baseline)return;
+                if(bridge.busy())return;
+                if(!require(bridge.backendOperationCount()==state->baseline+1,QStringLiteral("time schedule duplicated workers")))return;
+                bridge.setAutoSync(false);bridge.setAutoTrigger("amount");bridge.setAutoThresholdMB(1);
+                cxs::write_atomic(cxs::path(s(folder+"/schedules/source/below.bin")),cxs::Bytes(512*1024,0x41));
+                bridge.setAutoSync(true);state->baseline=bridge.backendOperationCount();bridge.reconcileChangesForCheck();state->phase=10;state->deadline=now+8000;break;
+            }
+            case 10:{
+                if(bridge.busy())return;
+                state->thresholdHeld=bridge.backendOperationCount()==state->baseline+1&&bridge.autoPending().contains("0.50");
+                if(!require(state->thresholdHeld,QStringLiteral("below-threshold changes started a backup")))return;
+                cxs::write_atomic(cxs::path(s(folder+"/schedules/source/above.bin")),cxs::Bytes(512*1024,0x42));
+                state->baseline=bridge.backendOperationCount();bridge.reconcileChangesForCheck();state->phase=11;state->deadline=now+8000;break;
+            }
+            case 11:{
+                if(bridge.busy()||bridge.backendOperationCount()<state->baseline+2)return;
+                Bridge scheduleReplay(bridge.configFile(),folder);state->amountChoice=scheduleReplay.autoTrigger()=="amount"&&scheduleReplay.autoThresholdMB()==1&&bridge.backendOperationCount()==state->baseline+2;
+                if(!require(state->amountChoice,QStringLiteral("quantity threshold did not trigger exactly one backup")))return;
+                finish(true,QStringLiteral("background event, interval and quantity schedules, metadata-only threshold and single worker passed"));break;
             }
             }
         }catch(const std::exception& error){finish(false,q(error.what()));}
