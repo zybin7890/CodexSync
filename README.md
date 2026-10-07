@@ -10,11 +10,18 @@ Codex 本地数据的加密备份与同步工具，使用 C23 / C++23、Qt 6，�
 
 ## 下载与运行
 
-[v0.3.0 预览版](https://github.com/zybin7890/CodexSync/releases/tag/v0.3.0) 提供 Windows x64 ZIP、Debian 13 amd64 DEB 与 `SHA256SUMS`。旧版仍可在 Releases 页面下载。
+本地 0.2.0 构建提供 Windows x64 安装版 EXE 与便携版 ZIP；本轮未发布新的 GitHub Release。Windows 包含 Qt 与应用本地 VC 运行库，无需另装 Qt；当前未签名，可能出现 SmartScreen 提示。HTTP API 使用 `serve`，C API 使用附带的动态库与头文件。Debian 使用同一核心，当前新增功能仅在 Windows 验收。
 
-- Windows 11：解压全部文件，运行 `CodexSync.exe`；终端使用 `codex-sync.exe`。已包含 Qt 与应用本地 VC 运行库，无需安装 Qt。当前未签名，可能出现 SmartScreen 提示。
-- Debian 13：运行 `sudo apt install ./CodexSync-v0.3.0-debian13-amd64.deb`，随后启动 `CodexSync` 或 `codex-sync --help`。依赖由 apt 安装；该包不面向 Debian 12。Windows 使用 FluentWinUI3 控件，Debian 使用 Fusion 控件，保留相同的设置页布局。
-- HTTP API 由终端程序的 `serve` 命令提供；C API 使用附带的动态库与头文件。
+## Windows 两种发行方式
+
+- 安装版：当前用户安装到 `%LOCALAPPDATA%\Programs\CodexSync`；配置、密钥、授权、偏好和状态保存在 `%LOCALAPPDATA%\CodexSyncNative`，卸载保留数据。
+- 便携版：解压后保留程序旁的 `portable.flag`，所有应用运行数据保存在 `data` 子目录；移动整个文件夹即可带走配置与密钥。Codex 的源数据仍留在原来的位置，不会被迁移。
+- GUI、CLI 和 C API 使用同一模式判定。`codex-sync paths` 可查看实际位置；`init` 和 `keygen` 不指定路径时写入本版默认目录。HTTP API 默认端口 **12306**，只监听本机并验证令牌。
+- 请勿将含个人 `data` 的便携文件夹分享给其他人；发行 ZIP/安装程序不包含个人数据或应用凭据。跨 Windows 账号的 DPAPI 凭据可能需要重新授权。
+
+## 语言与主题
+
+GUI 应用设置支持简体中文、English、跟随系统；语言即时切换，主题支持跟随系统/浅色/深色并记忆选择，偏好保存在当前发行模式的数据目录。界面操作不自动开始同步。终端/API 字段保持稳定；英文风险声明使用 `codex-sync disclaimer --lang en` 或 `{"op":"disclaimer","language":"en"}`。
 
 ## 数据范围
 
@@ -25,9 +32,21 @@ Codex 本地数据的加密备份与同步工具，使用 C23 / C++23、Qt 6，�
 
 `conversations` 命令核对文件和线程索引引用，报告缺失或被排除的数据。文件数量不等于唯一对话数量，远程云端独有的历史不在本地同步范围。
 
+### 精确选择
+
+“数据目录 → 选择具体内容”识别本地对话（含归档）、项目、插件缓存与 skills，可搜索及按项目/归档状态筛选。勾选实际限制扫描、上传、同步与恢复；CLI/API 使用 `catalog` 获取同一清单。项目勾选会显式加入项目源目录，不改变 Codex 的项目绑定，不自动上传。
+
+配置的 `selection.conversations/plugins/skills` 使用 `mode: "all"` 或 `mode: "selected"` 与 `ids` 数组；空 `ids` 表示该类全部不选。目录可单独启用，并设置相对路径 `include`/`exclude`（字面文件或子目录、不支持通配符，排除优先）。全量模式仍包含完整索引；部分对话模式不携带整库与全局索引，恢复仅导出所选原始记录到独立目录，**不会自动合并到 Codex 对话列表**。索引指向的缺失记录会显示为不可选；仅云端存在的数据不属于本地清单。
+
+## 保存方式与密钥
+
+左侧“加密”可选择 `payload_mode: "original"`（原样保存）、`"encrypted"`（全部加密）或 `"selective"`（部分加密）。旧配置保持全部加密。原样模式保留目录、文件名和可直接打开的内容，快照信息使用标准 JSON；部分模式仅将选中文件封装为 `.cxs`，其余文件原样保存，目录与文件名仍可见。`encryption_rules` 使用 `[{"root":"根目录ID","path":"相对文件或目录"}]`，空路径选择整个根；选中 SQLite 主库会同时加密其 WAL/journal。原样与部分模式保存同一捕获时间点的 SQLite 主库及日志文件，恢复到独立目录，不支持直接 `sync` 或 `restore --apply`。
+
+“密钥密码”可保护新生成的本机主密钥文件，或解锁已有受保护密钥；留空生成普通密钥，不改写已有密钥。CLI/API 使用 `CXS_KEY_PASSWORD`，密码不保存到配置。主密钥仍用于本机缓存、任务状态与 Google 凭据加密，不加密云端文件时也需保管；各设备使用相同主密钥。
+
 ## 安全与限制
 
-- 使用 libsodium XChaCha20-Poly1305 加密数据与清单，增量对象通过带密钥的摘要寻址；不同设备使用相同主密钥。
+- 全部加密模式使用 libsodium XChaCha20-Poly1305 加密数据与清单，增量对象通过带密钥的摘要寻址；部分加密使用认证流式加密。不同设备使用相同主密钥。
 - 文件级同步，不传播删除；并发冲突保留历史版本，不进行 SQLite 记录级合并。
 - 应用同步改动前须关闭 Codex，并明确使用 `--offline`。恢复默认写入独立目录，不覆盖源目录。
 - 主密钥、WebDAV 密码和 API 令牌不得提交到 Git 或放入同步根目录。请单独安全备份密钥。
@@ -87,7 +106,7 @@ codex-sync sync --config /absolute/path/sync.json --offline --dry-run
 ## API
 
 ```sh
-codex-sync serve --config /absolute/path/sync.json --port 17841
+codex-sync serve --config /absolute/path/sync.json --port 12306
 ```
 
 设置至少 32 个字符的 `CXS_API_TOKEN`，使用 `Authorization: Bearer <token>` 请求 `GET /v1/health` 或 `POST /v1/run`。请求示例：`{"op":"scan"}`，结果包含活动与归档历史覆盖信息。公开 C 接口见 [`include/codex_sync.h`](include/codex_sync.h)，通过 `cxs_run()` 调用，返回值使用 `cxs_free()` 释放。
@@ -97,7 +116,7 @@ codex-sync serve --config /absolute/path/sync.json --port 17841
 ### 授权与配置
 
 1. 在自己的 Google Cloud 项目启用 Drive API，创建 **Desktop app** 类型的 OAuth 客户端；按项目要求配置授权用户。所有同步设备使用同一 OAuth 应用、Google 账号、仓库 ID 与主密钥。
-2. GUI 的“连接与加密”选择 **Google Drive**，选择主密钥，点击“登录 Google”。已安全配置应用的设备无需填写 Client ID；自己的 OAuth 应用仍可在“高级 OAuth 设置”填写。只申请 `https://www.googleapis.com/auth/drive.appdata`，采用回环回调、随机 state 与 PKCE S256；不要求整个网盘权限。
+2. GUI 的“连接”选择 **Google Drive**，在“加密”选择主密钥，然后点击“登录 Google”。可见文件夹模式申请 `drive.file`，旧隐藏应用区使用 `drive.appdata`；采用回环回调、随机 state 与 PKCE S256，不要求整个网盘权限。自己的 OAuth 应用可在“高级 OAuth 设置”填写。
 3. 每台设备分别授权。刷新令牌与 Client Secret 用主密钥加密保存在 `state/google-oauth.cxs`；状态目录必须与同步数据根目录分离，凭据不上传、不写进普通配置。密钥更换后需重新授权。
 
 应用配置不随公开源码或安装包分发。Windows 自动读取当前用户 `%LOCALAPPDATA%/CodexSync/credentials/google-desktop-client.dpapi` 的 DPAPI 加密配置。Windows / Debian 也支持一次性通过 `google-client-import --config FILE` 从标准输入导入 Google Desktop 客户端 JSON：立即用 `CXS_KEY_FILE` 加密到 `state/google-client.cxs`，不输出凭据、不覆盖已有配置。不要将真实凭据放入命令参数或示例脚本。导入后 GUI / 终端登录无需手动输入 Client ID；已有授权可复用加密文件中的应用配置。新下载的公开版仍需安全配置应用，不能宣称所有设备开箱即用。

@@ -3,6 +3,7 @@
 #include "httplib.h"
 #include <sodium.h>
 #include <atomic>
+#include <exception>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -135,8 +136,9 @@ public:
     std::thread thread;
     std::mutex mutex;
     std::map<std::string, File> files, sessions;
-    std::atomic<int> counter{0}, refreshes{0}, pages{0}, downloads{0}, unauthorized{0};
-    std::atomic<bool> once_401{true}, once_429{true}, evil_location{false}, incomplete{false};
+    std::atomic<int> counter{0}, refreshes{0}, pages{0}, downloads{0}, unauthorized{0}, allocations{0}, multipart_uploads{0}, resumable_uploads{0}, queries{0};
+    std::atomic<bool> once_401{true}, once_429{true}, evil_location{false}, incomplete{false}, token_failure{false};
+    std::atomic<bool> upload_503{false}, committed_503{false}, corrupt_committed{false};
     std::string origin, expected_challenge;
     DriveFixture() {
         server.new_task_queue = [] { return new httplib::ThreadPool(2); };
@@ -154,14 +156,19 @@ public:
                 crypto_hash_sha256(hash, reinterpret_cast<const unsigned char*>(verifier.data()), verifier.size());
                 char challenge[128]; sodium_bin2base64(challenge, sizeof challenge, hash, sizeof hash, sodium_base64_VARIANT_URLSAFE_NO_PADDING);
                 check(expected_challenge == challenge, "OAuth PKCE verifier mismatch");
+                if (token_failure) { response.status = 400; response.set_content("{\"error\":\"fixture-token-failure\"}", "application/json"); return; }
             } else { check(form.at("grant_type") == "refresh_token" && form.at("refresh_token") == "fixture-refresh", "invalid token refresh"); ++refreshes; }
             response.set_content(Json{{"access_token", "fixture-access"}, {"refresh_token", "fixture-refresh"}, {"token_type", "Bearer"}, {"expires_in", 3600}, {"scope", "https://www.googleapis.com/auth/drive.appdata"}}.dump(), "application/json");
         });
+        server.Get("/drive/v3/about", [&](const auto&, auto& response) {response.set_content(Json{{"user",{{"permissionId","fixture-account"}}}}.dump(),"application/json");});
         server.Get("/drive/v3/files/generateIds", [&](const auto& request, auto& response) {
             check(request.get_param_value("space") == "appDataFolder", "wrong Drive ID space");
-            response.set_content(Json{{"ids", Json::array({"id" + std::to_string(++counter)})}}.dump(), "application/json");
+            const auto count = std::stoi(request.get_param_value("count")); check(count >= 1 && count <= 1000, "invalid Drive ID count");
+            auto ids = Json::array(); for (int i = 0; i < count; ++i) ids.push_back("id" + std::to_string(++counter)); ++allocations;
+            response.set_content(Json{{"ids", ids}}.dump(), "application/json");
         });
         server.Get("/drive/v3/files", [&](const auto& request, auto& response) {
+            ++queries;
             if (once_429.exchange(false)) { response.status = 429; return; }
             check(request.get_param_value("spaces") == "appDataFolder", "wrong Drive listing scope");
             const auto expression = request.get_param_value("q");
@@ -177,11 +184,37 @@ public:
             response.set_content(result.dump(), "application/json");
         });
         server.Post("/upload/drive/v3/files", [&](const auto& request, auto& response) {
-            check(request.get_param_value("uploadType") == "resumable", "resumable upload not used");
-            Json metadata = Json::parse(request.body);
+            const auto type = request.get_param_value("uploadType");
+            check(type == "resumable" || type == "multipart", "unsupported upload type");
+            Json metadata; std::string data;
+            if (type == "multipart") {
+                if(upload_503.exchange(false)){response.status=503;return;}
+                auto content_type = request.get_header_value("Content-Type");
+                check(content_type.starts_with("multipart/related; boundary="), "invalid multipart content type");
+                auto boundary = content_type.substr(content_type.find("boundary=") + 9);
+                const auto first = request.body.find("\r\n\r\n"), separator = request.body.find("\r\n--" + boundary + "\r\n", first + 4);
+                check(first != std::string::npos && separator != std::string::npos, "invalid multipart metadata framing");
+                metadata = Json::parse(request.body.substr(first + 4, separator - first - 4));
+                auto media = request.body.find("\r\n\r\n", separator + 4), end = request.body.find("\r\n--" + boundary + "--\r\n", media + 4);
+                check(media != std::string::npos && end != std::string::npos && end + boundary.size() + 8 == request.body.size(), "invalid multipart media framing");
+                data = request.body.substr(media + 4, end - media - 4);
+            } else metadata = Json::parse(request.body);
             check(metadata.at("parents") == Json::array({"appDataFolder"}), "upload escaped appDataFolder");
             check(metadata.at("name").get<std::string>().starts_with("codex-sync-v1.default."), "wrong repository namespace");
             auto id = metadata.at("id").get<std::string>();
+            if (type == "multipart") {
+                check(data.size() >= 44 && data.substr(0, 3) == "CXS", "plaintext multipart uploaded to Drive");
+                check(data.find("fixture-refresh") == std::string::npos && metadata.at("name").get<std::string>().find("google-oauth") == std::string::npos, "credential multipart uploaded to Drive");
+                std::lock_guard lock(mutex);
+                if(files.contains(id)){response.status=409;return;}
+                files[id] = {metadata.at("name"), std::move(data)};
+                if(committed_503.exchange(false)){
+                    if(corrupt_committed.exchange(false))files[id].data[0]^=1;
+                    ++multipart_uploads;response.status=503;return;
+                }
+                ++multipart_uploads; response.status = 201; response.set_content(Json{{"id", id}}.dump(), "application/json"); return;
+            }
+            ++resumable_uploads;
             { std::lock_guard lock(mutex); sessions[id] = {metadata.at("name"), ""}; }
             response.set_header("Location", evil_location ? "https://attacker.invalid/upload" : origin + "/upload/drive/v3/files?uploadType=resumable&upload_id=" + id);
         });
@@ -204,7 +237,7 @@ public:
         thread = std::thread([&] { server.listen_after_bind(); });
     }
     ~DriveFixture() { server.stop(); if (thread.joinable()) thread.join(); }
-    void callback(const std::string& authorization, bool deny = false) {
+    void callback(const std::string& authorization, bool deny = false, const fs::path& credential_path = {}) {
         auto query = parameters(authorization.substr(authorization.find('?') + 1));
         check(authorization.starts_with("https://accounts.google.com/o/oauth2/v2/auth?"), "untrusted authorization URL");
         check(query.at("scope") == "https://www.googleapis.com/auth/drive.appdata" && query.at("code_challenge_method") == "S256", "overbroad scope or missing PKCE");
@@ -213,7 +246,13 @@ public:
         const auto port = std::stoi(redirect.substr(17)); httplib::Client client("127.0.0.1", port); client.set_connection_timeout(3); client.set_read_timeout(3);
         auto invalid = client.Get("/?state=invalid&code=fixture-code"); check(invalid && invalid->status == 400, "OAuth state not checked");
         auto result = client.Get("/?state=" + cxs::url_encode(query.at("state")) + (deny ? "&error=access_denied" : "&code=fixture-code"));
-        check(result && result->status == 200, "OAuth callback failed");
+        const bool failed = deny || token_failure;
+        check(result && result->status == (failed ? 400 : 200), "OAuth browser outcome did not match final authorization result");
+        check(result->body.find(failed ? "授权失败" : "授权成功") != std::string::npos, "OAuth browser did not show final outcome");
+        if (!failed && !credential_path.empty()) check(fs::exists(credential_path), "OAuth browser declared success before credentials were saved");
+        check(result->get_header_value("Connection") == "close", "OAuth browser connection was not closed");
+        for (const auto* value : {"fixture-code", "fixture-access", "fixture-refresh", "fixture-token-failure"})
+            check(result->body.find(value) == std::string::npos, "OAuth browser exposed sensitive exchange details");
     }
 };
 int main(int argc, char** argv) {
@@ -228,7 +267,7 @@ int main(int argc, char** argv) {
         Json secrets{{"key_hex", std::string(key_data.begin(), key_data.end())}};
         DriveFixture fixture;
         Json config{{"format", 1}, {"device", cxs::random_id()}, {"state", cxs::utf8(base / "state")}, {"roots", Json::array({{{"id", "codex_home"}, {"path", cxs::utf8(home)}}})}, {"exclude", Json::array()},
-            {"remote", {{"provider", "google_drive"}, {"client_id", "fixture.apps.googleusercontent.com"}, {"repository", "default"}, {"allow_loopback_http", true}, {"test_api_origin", fixture.origin}, {"test_token_origin", fixture.origin}}}};
+            {"remote", {{"provider", "google_drive"}, {"storage_mode","appdata"},{"client_id", "fixture.apps.googleusercontent.com"}, {"repository", "default"}, {"allow_loopback_http", true}, {"test_api_origin", fixture.origin}, {"test_token_origin", fixture.origin}}}};
         auto managed = config;
         managed["remote"].erase("client_id"); managed["remote"].erase("test_api_origin"); managed["remote"].erase("test_token_origin");
         managed["state"] = cxs::utf8(base / "managed-state");
@@ -270,20 +309,44 @@ int main(int argc, char** argv) {
         if (previous_local.empty()) unset("LOCALAPPDATA");
         else check(SetEnvironmentVariableW(L"LOCALAPPDATA", cxs::path(previous_local).c_str()), "cannot restore fixture environment");
 #endif
-        auto authorized = cxs::google_authorize(config, secrets, [&](const auto& url) { fixture.callback(url); });
+        std::vector<std::string> stages;
+        auto authorize = [&](bool deny = false) {
+            std::jthread browser;
+            std::exception_ptr browser_error, authorization_error;
+            Json result;
+            stages.clear();
+            try {
+                result = cxs::google_authorize(config, secrets, [&](const auto& url) {
+                    browser = std::jthread([&, url] { try { fixture.callback(url, deny, cxs::google_credential_path(config)); } catch (...) { browser_error = std::current_exception(); } });
+                }, [&](const auto& stage) { stages.push_back(stage); });
+            } catch (...) { authorization_error = std::current_exception(); }
+            if (browser.joinable()) browser.join();
+            if (browser_error) std::rethrow_exception(browser_error);
+            if (authorization_error) std::rethrow_exception(authorization_error);
+            return result;
+        };
+        auto authorized = authorize();
         check(authorized.at("authorized") == true, "Google authorization failed");
+        check(stages == std::vector<std::string>{"browser_open", "callback_received", "token_exchange", "authorized"}, "OAuth success progress order incorrect");
         auto credential = cxs::read_bytes(cxs::google_credential_path(config));
         check(std::string(credential.begin(), credential.end()).find("fixture-refresh") == std::string::npos, "refresh token stored in plaintext");
         auto reused = config; reused["remote"].erase("client_id"); reused["remote"].erase("test_api_origin"); reused["remote"].erase("test_token_origin");
         { auto client = cxs::google_oauth_client(reused, secrets); check(client.id == "fixture.apps.googleusercontent.com", "saved authorization did not retain app identity"); }
         bool denied = false;
-        try { cxs::google_authorize(config, secrets, [&](const auto& url) { fixture.callback(url, true); }); } catch (...) { denied = true; }
+        try { authorize(true); } catch (const std::runtime_error& error) { denied = std::string(error.what()) == "Google authorization was declined"; }
         check(denied && cxs::read_bytes(cxs::google_credential_path(config)) == credential, "declined consent damaged previous authorization");
+        check(stages == std::vector<std::string>{"browser_open", "callback_received", "failed"}, "OAuth denial progress order incorrect");
+        fixture.token_failure = true; bool exchange_failed = false;
+        try { authorize(); } catch (const std::runtime_error& error) { exchange_failed = std::string(error.what()) == "Google authorization token exchange failed: HTTP 400"; }
+        fixture.token_failure = false;
+        check(exchange_failed && cxs::read_bytes(cxs::google_credential_path(config)) == credential, "failed token exchange damaged previous authorization");
+        check(stages == std::vector<std::string>{"browser_open", "callback_received", "token_exchange", "failed"}, "OAuth token failure progress order incorrect");
         const auto file = base / "sync.json"; text_file(file, config.dump());
         auto request = [&](const char* op) { auto value = secrets; value["op"] = op; value["config"] = cxs::utf8(file); return value; };
         const auto first = cxs::execute(request("backup"));
         check(first.at("uploaded_objects") == 1 && fixture.refreshes >= 2 && fixture.unauthorized == 1, "refresh/401 retry or encrypted backup failed");
-        auto second = cxs::execute(request("backup")); check(second.at("uploaded_objects") == 0, "immutable object uploaded twice");
+        auto second = cxs::execute(request("backup")); check(second.at("uploaded_objects") == 0&&second.at("no_changes")==true&&second.at("snapshot")==first.at("snapshot"), "unchanged Drive capture created a duplicate snapshot");
+        fs::create_directory(home/"new-directory");auto directory_change=cxs::execute(request("backup"));check(directory_change.at("snapshot")!=first.at("snapshot")&&directory_change.at("body_bytes")==0&&directory_change.at("uploaded_objects")==0,"directory-only change did not reuse file bodies");
         { std::lock_guard lock(fixture.mutex); auto duplicate = std::find_if(fixture.files.begin(), fixture.files.end(), [](const auto& item){return item.second.name.find(".snapshots.")!=std::string::npos;})->second; fixture.files["id" + std::to_string(++fixture.counter)] = duplicate; }
         check(cxs::execute(request("history")).at("snapshots").size() == 2 && fixture.pages > 0, "pagination or duplicate-name handling failed");
         const auto other = base / "other-source"; fs::create_directories(other);
@@ -302,7 +365,31 @@ int main(int argc, char** argv) {
         fixture.incomplete = true; rejected = false;
         try { cxs::GoogleDrive drive(config, secrets); drive.list("snapshots"); } catch (...) { rejected = true; } check(rejected, "incomplete Google listing accepted"); fixture.incomplete = false;
         fixture.evil_location = true; rejected = false;
-        try { cxs::GoogleDrive drive(config, secrets); drive.put_immutable("objects/" + std::string(64, 'e') + ".cxs", credential); } catch (...) { rejected = true; } check(rejected, "untrusted upload endpoint accepted");
+        try { cxs::GoogleDrive drive(config, secrets); auto large = credential; large.resize(5 * 1024 * 1024 + 1); drive.put_immutable("objects/" + std::string(64, 'e') + ".cxs", large); } catch (...) { rejected = true; } check(rejected, "untrusted upload endpoint accepted"); fixture.evil_location = false;
+        {
+            cxs::GoogleDrive drive(config, secrets); drive.prepare_uploads();
+            const auto before_queries = fixture.queries.load(), before_allocations = fixture.allocations.load(), before_multipart = fixture.multipart_uploads.load();
+            std::vector<std::thread> workers; std::exception_ptr failure; std::mutex failure_mutex;
+            for (int i = 0; i < 4; ++i) workers.emplace_back([&, i] {
+                try { check(drive.put_immutable("objects/" + std::string(64, static_cast<char>('a' + i)) + ".cxs", credential), "parallel object upload skipped"); }
+                catch (...) { std::lock_guard lock(failure_mutex); failure = std::current_exception(); }
+            });
+            for (auto& worker : workers) worker.join(); if (failure) std::rethrow_exception(failure);
+            check(fixture.queries == before_queries && fixture.allocations == before_allocations + 1 && fixture.multipart_uploads == before_multipart + 4, "directory negative cache, pooled IDs or parallel multipart failed");
+            check(!drive.put_immutable("objects/" + std::string(64, 'a') + ".cxs", credential), "parallel upload cache lost immutable object");
+            fixture.upload_503=true;
+            check(drive.put_immutable("objects/"+std::string(64,'1')+".cxs",credential),"transient multipart failure did not retry");
+            auto uploads_before_retry=fixture.multipart_uploads.load(),downloads_before_retry=fixture.downloads.load();
+            fixture.committed_503=true;
+            check(drive.put_immutable("objects/"+std::string(64,'2')+".cxs",credential),"lost upload response did not recover");
+            check(fixture.multipart_uploads==uploads_before_retry+1&&fixture.downloads==downloads_before_retry+1,"retry duplicated an immutable file or skipped byte verification");
+            fixture.committed_503=true;fixture.corrupt_committed=true;bool corruption_rejected=false;
+            try{drive.put_immutable("objects/"+std::string(64,'3')+".cxs",credential);}catch(...){corruption_rejected=true;}
+            check(corruption_rejected,"upload retry accepted mismatched remote bytes");
+            auto large = credential; large.resize(5 * 1024 * 1024 + 1);
+            check(drive.put_immutable("objects/" + std::string(64, 'f') + ".cxs", large), "large resumable upload failed");
+            check(drive.get("objects/" + std::string(64, 'f') + ".cxs").body == large, "large resumable media changed");
+        }
         auto unsafe = config; unsafe["remote"]["test_api_origin"] = "https://attacker.invalid"; rejected = false;
         try { cxs::GoogleDrive drive(unsafe, secrets); } catch (...) { rejected = true; } check(rejected, "remote endpoint override accepted");
         auto overlapping=config;overlapping["state"]=overlapping["roots"][0]["path"];rejected=false;

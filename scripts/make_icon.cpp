@@ -1,5 +1,5 @@
 // Render the vector source at every icon size, preserving transparent corners.
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QImage>
 #include <QBuffer>
 #include <QDataStream>
@@ -10,7 +10,7 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
     const auto args = app.arguments();
     if (args.size() != 3) return 1;
     QSvgRenderer renderer(args[1]);
@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
         return image.scaled(size, size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     };
     if (!render(512).save(args[2] + "/codexsync.png")) return 4;
+    if (!render(120).save(args[2] + "/codexsync-google-120.png")) return 4;
     QList<QByteArray> frames;
     const QList<int> sizes = {16, 32, 48, 64, 128, 256};
     for (const int size : sizes) {

@@ -21,6 +21,8 @@ fs::path client_file(const Json& config) {
 }
 fs::path system_client_file() {
 #ifdef _WIN32
+    const auto managed = application_data_directory() / "credentials/google-desktop-client.dpapi";
+    if (portable_mode() || fs::is_regular_file(managed)) return managed;
     auto local = env("LOCALAPPDATA");
     if (!local.empty() && path(local).is_absolute())
         return path(local) / "CodexSync/credentials/google-desktop-client.dpapi";

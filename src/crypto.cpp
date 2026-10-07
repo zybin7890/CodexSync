@@ -1,7 +1,10 @@
 #include "core.hpp"
+#include "encryption.hpp"
 #include <sodium.h>
 #include <fstream>
 #include <stdexcept>
+#include <cerrno>
+#include <cstring>
 #ifdef _WIN32
 #include <windows.h>
 #include <aclapi.h>
@@ -12,7 +15,17 @@
 #endif
 namespace cxs {
 static void init() { static int ok=sodium_init(); if(ok<0) throw std::runtime_error("crypto initialization failed"); }
-fs::path path(const std::string& s) { return fs::u8path(s); }
+fs::path path(const std::string& s) {
+#ifdef _WIN32
+    // Extended Win32 device paths do not accept forward slash separators.
+    if(s.starts_with("//?/")||s.starts_with("\\\\?\\")){auto value=s;std::replace(value.begin(),value.end(),'/','\\');return fs::u8path(value);}
+#endif
+    auto result=fs::u8path(s);
+#ifdef _WIN32
+    result.make_preferred();
+#endif
+    return result;
+}
 std::string utf8(const fs::path& p) { auto u=p.generic_u8string(); return {reinterpret_cast<const char*>(u.data()),u.size()}; }
 std::string env(const char* n) {
 #ifdef _WIN32
@@ -39,7 +52,14 @@ static void secure(const fs::path& p) {
 }
 void private_directory(const fs::path& p) { fs::create_directories(p); if(fs::is_symlink(fs::symlink_status(p)))throw std::runtime_error("private directory must not be a symlink"); secure(p); }
 Bytes read_bytes(const fs::path& p,size_t limit) {
-    std::ifstream in(p,std::ios::binary); if(!in)throw std::runtime_error("cannot open file: "+utf8(p));
+    std::ifstream in(p,std::ios::binary); if(!in){const int code=errno;
+#ifdef _WIN32
+        const auto windows_error=GetLastError();
+        throw std::runtime_error("cannot open file: "+utf8(p)+" (errno="+std::to_string(code)+", win32="+std::to_string(windows_error)+")");
+#else
+        throw std::runtime_error("cannot open file: "+utf8(p)+" ("+std::strerror(code)+")");
+#endif
+    }
     auto n=fs::file_size(p); if(n>limit)throw std::runtime_error("file exceeds supported size"); Bytes out(static_cast<size_t>(n));
     if(!out.empty()&&!in.read(reinterpret_cast<char*>(out.data()),static_cast<std::streamsize>(out.size())))throw std::runtime_error("incomplete file read"); return out;
 }
@@ -65,5 +85,5 @@ Bytes open(const Bytes& b,const Key& k,const std::string& domain) {
     init();if(b.size()<44||b[0]!='C'||b[1]!='X'||b[2]!='S'||b[3]!=1)throw std::runtime_error("invalid encrypted object");Bytes out(b.size()-44);unsigned long long n{};
     if(crypto_aead_xchacha20poly1305_ietf_decrypt(out.data(),&n,nullptr,b.data()+28,b.size()-28,reinterpret_cast<const unsigned char*>(domain.data()),domain.size(),b.data()+4,k.data())!=0)throw std::runtime_error("authentication failed: wrong key or damaged object");out.resize(static_cast<size_t>(n));return out;
 }
-void generate_key(const fs::path& p) {init();if(fs::exists(p))throw std::runtime_error("refusing to overwrite an existing key");Key k;randombytes_buf(k.data(),k.size());char s[65];sodium_bin2hex(s,sizeof s,k.data(),k.size());Bytes b(s,s+64);b.push_back('\n');write_atomic(p,b);sodium_memzero(k.data(),k.size());sodium_memzero(s,sizeof s);}
+void generate_key(const fs::path& p,const std::string& password) {init();if(fs::exists(p))throw std::runtime_error("refusing to overwrite an existing key");Key k;randombytes_buf(k.data(),k.size());char s[65];sodium_bin2hex(s,sizeof s,k.data(),k.size());Bytes b(s,s+64);b.push_back('\n');try{if(!password.empty())b=protect_key(k,password);write_atomic(p,b);}catch(...){sodium_memzero(k.data(),k.size());sodium_memzero(s,sizeof s);throw;}sodium_memzero(k.data(),k.size());sodium_memzero(s,sizeof s);sodium_memzero(b.data(),b.size());}
 }

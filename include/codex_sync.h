@@ -14,7 +14,11 @@ extern "C" {
 #endif
 /* UTF-8 JSON. Result is allocated by this library. Always call cxs_free().
    No secrets in result or error text. Operations are serialized per state directory.
-   request: {"op":"discover|scan|backup|sync|history|restore", "config":"...", ...}
+   request: {"op":"discover|scan|backup|resume|sync|history|restore|rollback|progress|pause|cancel", "config":"...", ...}
+   progress is a key-free read-only query of the latest state-owning task.
+   pause/cancel require the current job_id; resume transfers its prepared capture.
+   Optional progress_id identifies a backup/sync/restore/rollback task; counters
+   are per phase, transferred_bytes counts successful encrypted object transfers.
    Secret fields key_hex, dav_user, dav_password are optional transient overrides.
    Otherwise CXS_KEY_FILE, CXS_DAV_USER, CXS_DAV_PASSWORD are read from environment. */
 CXS_API int cxs_run(const char* request_json, char** result_json);

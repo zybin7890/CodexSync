@@ -99,7 +99,8 @@ jobs:
           from pathlib import Path
           for folder in ('gui-smoke', 'google-gui-smoke'):
               report = json.loads((Path('dist') / folder / 'gui-ready.json').read_text())
-              assert report['backend_operations'] == 0 and report['screenshots'] == 9
+              assert report['backend_operations'] == 0 and report['screenshots'] == 13
+              assert report['pages'] == 7 and report['encryption_page_verified']
               for field in ('notice_first_run', 'notice_unchecked_disabled', 'notice_operation_gate', 'notice_acknowledgement_persisted'):
                   assert report[field], field
           print('DEBIAN_GUI_NOTICE_PASS: first-run gate, explicit acknowledgement, persistent local record, no backend operations')
