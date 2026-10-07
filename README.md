@@ -4,13 +4,13 @@
 
 Codex 本地数据的加密备份与同步工具，使用 C23 / C++23、Qt 6，支持 WebDAV、Google Drive 与本地仓库。提供 Windows 11 风格 GUI、终端 CLI、HTTP API 与 C API。非 OpenAI 官方项目。
 
-**开发预览，尚非生产版本。** Google Drive 提供浏览器 OAuth 授权、令牌续期与加密快照。2026-10-07 已在 Windows 上完成真实 Google 账号的 OAuth、76 字节自造样本加密上传、去重、历史列举和逐字节一致恢复；未读取真实 Codex 数据。协议测试另外使用隔离的本地模拟服务。Debian 真实 Google 账号授权、真实 WebDAV 服务端互操作、大规模数据及跨设备迁移尚未验收。请先使用测试数据，不要直接覆盖唯一的数据副本。
+**开发预览，尚非生产版本。** Windows 已验证真实 Google 隐藏库的加密备份、历史查询及空缓存抽样恢复；原样和部分加密模式通过隔离仓库与模拟 Drive 服务验证。Debian 真实 Google 账号授权、真实 WebDAV 服务端互操作及完整跨设备迁移尚未验收。请先使用测试数据验证恢复，不要直接覆盖唯一的数据副本。
 
 **使用前请阅读 [使用风险与免责声明](DISCLAIMER.md)。** GUI 首次使用需明确勾选已阅读，声明版本更新后会再次提示；GUI 未确认前不会启动授权、同步、恢复或 API。阅读记录只保存在本机，不上传。应用设置可随时重新查看；终端运行 `codex-sync disclaimer`，HTTP/C API 可请求 `{"op":"disclaimer"}`，不增加交互提示以免破坏自动化。此提示不限制开源许可证权利，也不要求放弃法定权利。
 
 ## 下载与运行
 
-本地 0.2.0 构建提供 Windows x64 安装版 EXE 与便携版 ZIP；本轮未发布新的 GitHub Release。Windows 包含 Qt 与应用本地 VC 运行库，无需另装 Qt；当前未签名，可能出现 SmartScreen 提示。HTTP API 使用 `serve`，C API 使用附带的动态库与头文件。Debian 使用同一核心，当前新增功能仅在 Windows 验收。
+[0.2 Win11 预览版](https://github.com/zybin7890/CodexSync/releases/tag/v0.2.0-preview.20261008) 提供 Windows x64 安装版 Setup EXE、便携版 Portable ZIP，以及在 121 服务器编译的 Debian 13 amd64 DEB；同页附对应源码 ZIP 和 SHA-256 校验文件。Windows 包含 Qt 与应用本地 VC 运行库，无需另装 Qt；当前未签名，可能出现 SmartScreen 提示。HTTP API 使用 `serve`，C API 使用附带的动态库与头文件。
 
 ## Windows 两种发行方式
 

@@ -1,6 +1,6 @@
 # Risks and disclaimer
 
-Notice version: 2026-10-07
+Notice version: 2026-10-08
 
 CodexSync is an independently maintained open-source tool. It is not an official product of OpenAI, Google or any other cloud provider, and does not imply their endorsement or warranty.
 
@@ -18,7 +18,7 @@ Selected local directories may contain conversations, account information, passw
 
 ## Google authorization and third-party services
 
-Google Drive authorization requests only this application's dedicated data space, not other Drive files. Refresh tokens are saved in an encrypted local state file. Sync data is uploaded to the service you select; the developers do not host your data. Cloud providers can still receive necessary account, request and storage-usage information. Encryption does not eliminate every risk.
+Hidden Google Drive storage uses drive.appdata; visible backup folders use drive.file and access only files created by this app or authorized by the user. The two storage modes use separate authorization, and existing hidden backups are retained. Refresh tokens are saved in an encrypted local state file. Sync data is uploaded to the service you select; the developers do not host your data. Original mode uploads unencrypted contents. Selective encryption protects only selected contents; directory and file names remain visible. Check the storage mode and encryption selection before uploading. Cloud providers can still receive necessary account, request and storage-usage information. Encryption does not eliminate every risk.
 
 Third-party terms, quotas, fees, account restrictions and availability are determined by the provider. The software does not guarantee that services will remain free or compatible, and will not purchase storage or enable paid services for you. Confirm that you are entitled to use the selected account, service and data.
 

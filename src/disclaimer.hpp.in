@@ -1,7 +1,7 @@
 #pragma once
 #include <string_view>
 namespace cxs {
-inline constexpr std::string_view disclaimer_version = "2026-10-07";
+inline constexpr std::string_view disclaimer_version = "2026-10-08";
 inline constexpr std::string_view disclaimer_text = R"CXSNOTICE(@CXS_DISCLAIMER_TEXT@)CXSNOTICE";
 inline constexpr std::string_view disclaimer_en_text = R"CXSNOTICE(@CXS_DISCLAIMER_EN_TEXT@)CXSNOTICE";
 }
