@@ -665,7 +665,7 @@ ApplicationWindow {
             Section { text: qsTr("API 接口") }
             Setting {
                 title: qsTr("本地 HTTP API"); description: qsTr("仅监听 127.0.0.1，拒绝未授权访问"); iconName: "code"; trailing: ui.apiRunning ? qsTr("运行中") : qsTr("未启动"); expandAvailable: true; expanded: true
-                RowLayout { FieldLabel { text: qsTr("监听端口") } SpinBox { id: apiPort; objectName: "apiPort"; from: 1024; to: 65535; value: 12306; editable: true } }
+                RowLayout { FieldLabel { text: qsTr("监听端口") } SpinBox { id: apiPort; objectName: "apiPort"; from: 1024; to: 65535; value: 12306; editable: true; textFromValue: function(value, locale) { return String(value) } } }
                 RowLayout { spacing: 8; Button { text: ui.apiRunning ? qsTr("停止 API") : qsTr("启动 API"); highlighted: !ui.apiRunning; onClicked: ui.apiRunning ? ui.stopApi() : ui.startApi(apiPort.value) } Caption { text: qsTr("关闭应用时，将停止由界面启动的 API。") } }
             }
             Setting {
